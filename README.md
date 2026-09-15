@@ -1,4 +1,4 @@
-# Maples Academy Smartboard Tool — Free Interactive Classroom Presentation Software
+# Smartboard Tool — Free Interactive Classroom Presentation Software
 
 > Open-source smartboard and PDF annotation platform for teachers. Annotate PDFs, draw shapes, present lessons, and export — from any device, in real time. Built with Next.js 15, React 19, and Supabase.
 
@@ -9,9 +9,9 @@
 
 ---
 
-## What is Maples Academy Smartboard Tool?
+## What is Smartboard Tool?
 
-**Maples Academy Smartboard Tool** is a free, open-source interactive classroom presentation application that runs entirely in the browser. It replaces expensive physical smartboards, clunky desktop presentation software, and paid annotation subscriptions.
+**Smartboard Tool** is a free, open-source interactive classroom presentation application that runs entirely in the browser. It replaces expensive physical smartboards, clunky desktop presentation software, and paid annotation subscriptions.
 
 Teachers can open any PDF document, annotate it live with pen, shapes, and text, present it in full-screen mode, and export the annotated result as a PDF — all from a laptop, tablet, or interactive display, with no installation required beyond a browser.
 
@@ -248,4 +248,4 @@ See [LICENSE](LICENSE) for details.
 
 ---
 
-*Maples Academy Smartboard Tool — interactive whiteboard software · classroom presentation tool · PDF annotator · free smartboard app · open-source teaching software*
+*Classboard Tool — interactive whiteboard software · classroom presentation tool · PDF annotator · free smartboard app · open-source teaching software*
