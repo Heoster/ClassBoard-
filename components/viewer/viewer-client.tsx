@@ -416,7 +416,7 @@ export function ViewerClient() {
     setHistory([]);
     setFuture([]);
     setStatus(cloudId ? "Cloud presentation ready" : "16:9 Presentation Canvas ready");
-    if (cloudId) void saveCloud([], defaultPages, cloudId);
+    if (cloudId) void saveCloud([], defaultPages, cloudId).catch(err => setStatus(err instanceof Error ? err.message : "Cloud save failed"));
   };
 
   const loadPdf = async (data: ArrayBuffer, savedPages?: ViewerPage[]) => {
@@ -628,7 +628,7 @@ export function ViewerClient() {
           const previous = curr.at(-1)!;
           setFuture(f => [annotationsRef.current, ...f]);
           setAnnotations(previous);
-          void saveCloud(previous);
+          void saveCloud(previous).catch(err => setStatus(err instanceof Error ? err.message : "Cloud save failed"));
           return curr.slice(0, -1);
         });
       } else if (ctrl && (e.key === "y" || (e.shiftKey && e.key === "z"))) {
@@ -638,7 +638,7 @@ export function ViewerClient() {
           const next = curr[0];
           setHistory(h => [...h, annotationsRef.current]);
           setAnnotations(next);
-          void saveCloud(next);
+          void saveCloud(next).catch(err => setStatus(err instanceof Error ? err.message : "Cloud save failed"));
           return curr.slice(1);
         });
       } else if (e.key === "Delete" || e.key === "Backspace") {
@@ -648,7 +648,7 @@ export function ViewerClient() {
           setHistory(h => [...h, annotationsRef.current]);
           setAnnotations(next);
           setFuture([]);
-          void saveCloud(next);
+          void saveCloud(next).catch(err => setStatus(err instanceof Error ? err.message : "Cloud save failed"));
           return undefined;
         });
       } else if (e.key === "Escape") {
@@ -1011,7 +1011,7 @@ export function ViewerClient() {
     setPageOrder(next); setAnnotations(nextAnnotations);
     if (documentId) window.localStorage.setItem(pageLayoutKey(documentId), JSON.stringify(next));
     setPage(insertAt + 1);
-    void saveCloud(nextAnnotations, next);
+    void saveCloud(nextAnnotations, next).catch(err => setStatus(err instanceof Error ? err.message : "Cloud save failed"));
   };
 
   const reorderPage = (direction: -1 | 1) => {
@@ -1028,7 +1028,7 @@ export function ViewerClient() {
     if (documentId) window.localStorage.setItem(pageLayoutKey(documentId), JSON.stringify(nextPages));
     setAnnotations(nextAnnotations);
     setPage(to + 1);
-    void saveCloud(nextAnnotations, nextPages);
+    void saveCloud(nextAnnotations, nextPages).catch(err => setStatus(err instanceof Error ? err.message : "Cloud save failed"));
   };
 
   // FIX #13: replaced window.confirm with inline confirm dialog
@@ -1042,7 +1042,7 @@ export function ViewerClient() {
         const resetPageOrder: ViewerPage[] = [{ id: pageOrder[0]?.id || createId(), background: "#1e293b", aspectRatio: "16:9" }];
         setAnnotations(nextAnnotations); setPageOrder(resetPageOrder); setPage(1);
         if (documentId) window.localStorage.setItem(pageLayoutKey(documentId), JSON.stringify(resetPageOrder));
-        void saveCloud(nextAnnotations, resetPageOrder);
+        void saveCloud(nextAnnotations, resetPageOrder).catch(err => setStatus(err instanceof Error ? err.message : "Cloud save failed"));
         setConfirmState(null);
       });
       return;
@@ -1056,13 +1056,13 @@ export function ViewerClient() {
     const newActivePage = Math.max(1, Math.min(page > targetPageNum ? page - 1 : page, nextPages.length));
     setPageOrder(nextPages); setAnnotations(nextAnnotations); setPage(newActivePage);
     if (documentId) window.localStorage.setItem(pageLayoutKey(documentId), JSON.stringify(nextPages));
-    void saveCloud(nextAnnotations, nextPages);
+    void saveCloud(nextAnnotations, nextPages).catch(err => setStatus(err instanceof Error ? err.message : "Cloud save failed"));
   };
 
   const changePageBackground = (background: string) => setPageOrder(curr => {
     const next = curr.map((item, i) => i === page - 1 ? { ...item, background } : item);
     if (documentId) window.localStorage.setItem(pageLayoutKey(documentId), JSON.stringify(next));
-    void saveCloud(annotations, next);
+    void saveCloud(annotations, next).catch(err => setStatus(err instanceof Error ? err.message : "Cloud save failed"));
     return next;
   });
 
@@ -1108,7 +1108,7 @@ export function ViewerClient() {
     }
   };
 
-  const endTransform = () => { if (transforming) { setTransforming(null); void saveCloud(annotationsRef.current); } };
+  const endTransform = () => { if (transforming) { setTransforming(null); void saveCloud(annotationsRef.current).catch(err => setStatus(err instanceof Error ? err.message : "Cloud save failed")); } };
 
   const isErrorStatus = status.toLowerCase().includes("failed") || status.toLowerCase().includes("unavailable") || status.toLowerCase().includes("error");
 
@@ -1174,7 +1174,7 @@ export function ViewerClient() {
                 setFuture(c => [annotations, ...c]);
                 setAnnotations(previous);
                 setHistory(c => c.slice(0, -1));
-                void saveCloud(previous);
+                void saveCloud(previous).catch(err => setStatus(err instanceof Error ? err.message : "Cloud save failed"));
               }
             }}>↶</button>
           <button type="button" title="Redo (Ctrl+Y)" disabled={!future.length}
@@ -1184,7 +1184,7 @@ export function ViewerClient() {
                 setHistory(c => [...c, annotations]);
                 setAnnotations(next);
                 setFuture(c => c.slice(1));
-                void saveCloud(next);
+                void saveCloud(next).catch(err => setStatus(err instanceof Error ? err.message : "Cloud save failed"));
               }
             }}>↷</button>
         </div>
