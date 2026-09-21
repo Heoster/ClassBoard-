@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { getSupabaseServerClient } from "../../lib/supabase/server";
 
 const recentLessons = [
@@ -9,11 +10,13 @@ const recentLessons = [
 
 export default async function DashboardPage() {
 	const client = await getSupabaseServerClient();
-	const [{ data: cloudDocuments }, { count: annotationCount }, { data: { user } }] = await Promise.all([
+	const [{ data: cloudDocuments }, { count: annotationCount }, { data: authData, error: authError }] = await Promise.all([
 		client.from("documents").select("id,filename,document_type,updated_at,page_count").order("updated_at", { ascending: false }).limit(6),
 		client.from("annotations").select("id", { count: "exact", head: true }),
 		client.auth.getUser(),
 	]);
+	if (authError || !authData.user) redirect("/sign-in");
+	const user = authData.user;
 	const { data: documentTotals } = await client.from("documents").select("id,page_count,updated_at");
 	const pdfCount = documentTotals?.length ?? 0;
 	const pageCount = documentTotals?.reduce((total, document) => total + (document.page_count ?? 0), 0) ?? 0;
