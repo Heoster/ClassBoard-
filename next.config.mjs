@@ -1,19 +1,40 @@
 /** @type {import('next').NextConfig} */
+
+// In development Next.js React Fast Refresh and the webpack HMR runtime use
+// eval() internally (via the react-refresh-utils bundle).  The CSP must allow
+// 'unsafe-eval' in dev or the browser throws an EvalError before the page boots.
+// In production the refresh runtime is never shipped, so we keep the strict CSP.
+const isDev = process.env.NODE_ENV === "development";
+
 const nextConfig = {
   // ─── Build ──────────────────────────────────────────────────────────────────
   experimental: {
     serverActions: { bodySizeLimit: "50mb" },
   },
-  eslint: { ignoreDuringBuilds: true },
+  // ESLint runs as a separate CI step (npm run lint) so builds stay fast.
+  // Remove this line to also enforce lint during `next build`.
+  eslint: { ignoreDuringBuilds: false },
 
   // Suppress "X-Powered-By: Next.js" header — minor security hardening
   poweredByHeader: false,
 
-  // ─── Webpack ────────────────────────────────────────────────────────────────
+  // ─── Webpack (used by `next build` and `next dev` without --turbopack) ────────
+  // Turbopack has its own alias config below and ignores this block.
   webpack(config) {
     // pdf.js tries to require 'canvas' in Node; alias it to false for browser builds
     config.resolve.alias.canvas = false;
     return config;
+  },
+
+  // ─── Turbopack alias (used by `next dev --turbopack`) ────────────────────────
+  // Mirrors the webpack canvas=false alias so pdf.js doesn't crash in Turbopack
+  // dev mode.  We point `canvas` at the built-in empty module stub.
+  // Without this block, Next.js logs "Webpack is configured while Turbopack is not".
+  turbopack: {
+    resolveAlias: {
+      // Empty stub — pdf.js's optional canvas dependency is not needed in the browser
+      canvas: "./lib/stubs/canvas.js",
+    },
   },
 
   // ─── HTTP headers ──────────────────────────────────────────────────────────
@@ -34,14 +55,17 @@ const nextConfig = {
             key: "Permissions-Policy",
             value: "fullscreen=*, clipboard-write=*, clipboard-read=(self)",
           },
-          // Basic CSP — blocks inline eval; allows Supabase, unpkg (pdfjs worker)
+          // Basic CSP — blocks inline eval in production; allows Supabase, unpkg (pdfjs worker).
+          // 'unsafe-eval' is added only in development for Next.js Fast Refresh / HMR.
           {
             key: "Content-Security-Policy",
             value: [
               "default-src 'self'",
-              // Next.js inline scripts use nonces in production; allow 'unsafe-inline'
-              // in dev only — Next.js handles this automatically via nonce injection
-              "script-src 'self' 'unsafe-inline' https://unpkg.com",
+              // 'unsafe-eval' only in dev (React Fast Refresh needs it).
+              // 'unsafe-inline' kept for Next.js inline script injection.
+              isDev
+                ? "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://unpkg.com"
+                : "script-src 'self' 'unsafe-inline' https://unpkg.com",
               "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
               "font-src 'self' https://fonts.gstatic.com data:",
               "img-src 'self' data: blob: https://*.supabase.co https://*.supabase.io",
