@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { getSupabaseServerClient } from "../../lib/supabase/server";
 import { DeleteDocumentButton } from "../../components/documents/delete-document-button";
 import { SignOutButton } from "../../components/auth/sign-out-button";
@@ -7,7 +8,9 @@ import "./settings.css";
 
 export default async function SettingsPage() {
   const client = await getSupabaseServerClient();
-  const { data: { user } } = await client.auth.getUser();
+  const { data: authData, error: authError } = await client.auth.getUser();
+  if (authError || !authData.user) redirect("/sign-in");
+  const user = authData.user;
   const { data: documents } = await client.from("documents").select("id,filename,storage_path").eq("document_type", "pdf").order("updated_at", { ascending: false });
   return <main className="settings-page">
     <header className="documents-header"><Link className="brand" href="/dashboard"><span className="brand-mark">M</span><span>MAPLES ACADEMY<br /><small>SMARTBOARD TOOL</small></span></Link><div className="documents-actions"><Link className="secondary" href="/dashboard">Dashboard</Link><Link className="primary" href="/documents">Documents</Link></div></header>
