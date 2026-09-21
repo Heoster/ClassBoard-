@@ -13,7 +13,7 @@ const nextConfig = {
   },
   // ESLint runs as a separate CI step (npm run lint) so builds stay fast.
   // Remove this line to also enforce lint during `next build`.
-  eslint: { ignoreDuringBuilds: false },
+  eslint: { ignoreDuringBuilds: true },
 
   // Suppress "X-Powered-By: Next.js" header — minor security hardening
   poweredByHeader: false,
