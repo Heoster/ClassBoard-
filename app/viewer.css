@@ -1450,6 +1450,9 @@
   cursor: grab;
   flex-shrink: 0;
   touch-action: none;
+  position: sticky;
+  top: 0;
+  z-index: 1;
 }
 .shapes-panel-header:active { cursor: grabbing; background: #f1f5f9; }
 
