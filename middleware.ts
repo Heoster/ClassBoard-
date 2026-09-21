@@ -19,7 +19,12 @@ export async function middleware(request: NextRequest) {
   });
 
   const { data: { user } } = await supabase.auth.getUser();
-  const isPublic = request.nextUrl.pathname === "/" || request.nextUrl.pathname.startsWith("/sign-in") || request.nextUrl.pathname.startsWith("/_next") || request.nextUrl.pathname === "/favicon.ico";
+  const isPublic =
+    request.nextUrl.pathname === "/" ||
+    request.nextUrl.pathname.startsWith("/sign-in") ||
+    request.nextUrl.pathname.startsWith("/upload") ||   // student QR upload — no auth required
+    request.nextUrl.pathname.startsWith("/_next") ||
+    request.nextUrl.pathname === "/favicon.ico";
   if (!user && !isPublic) {
     const loginUrl = request.nextUrl.clone();
     loginUrl.pathname = "/sign-in";
