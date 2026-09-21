@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#2563eb" />
+  <title>Offline — Maples Academy Smartboard</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root { --blue: #2563eb; --ink: #0f172a; --muted: #64748b; }
+
+    html, body {
+      height: 100%;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+      background: var(--ink);
+      color: #ffffff;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    body {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 1.5rem;
+      padding: 2rem 1.5rem;
+      text-align: center;
+      min-height: 100dvh;
+    }
+
+    /* Animated board icon */
+    .icon-wrap {
+      position: relative;
+      width: 88px;
+      height: 88px;
+    }
+    .board-ring {
+      width: 88px;
+      height: 88px;
+      border-radius: 50%;
+      background: rgba(37, 99, 235, 0.15);
+      border: 2px solid rgba(37, 99, 235, 0.4);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      animation: pulse 2.4s ease-in-out infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(37,99,235,0.35); }
+      50%       { box-shadow: 0 0 0 18px rgba(37,99,235,0); }
+    }
+    .board-svg { width: 48px; height: 48px; }
+
+    h1 {
+      font-size: clamp(1.35rem, 5vw, 1.9rem);
+      font-weight: 800;
+      letter-spacing: -0.04em;
+      line-height: 1.15;
+    }
+
+    p {
+      max-width: 340px;
+      font-size: 0.9rem;
+      color: #94a3b8;
+      line-height: 1.65;
+    }
+
+    .tip-box {
+      display: flex;
+      flex-direction: column;
+      gap: 0.55rem;
+      padding: 1.1rem 1.4rem;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 14px;
+      max-width: 360px;
+      text-align: left;
+    }
+    .tip-box strong {
+      font-size: 0.72rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: #60a5fa;
+    }
+    .tip-row {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.65rem;
+      font-size: 0.82rem;
+      color: #cbd5e1;
+      line-height: 1.5;
+    }
+    .tip-row span:first-child {
+      flex-shrink: 0;
+      font-size: 1rem;
+    }
+
+    .btn-group {
+      display: flex;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+    button {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      padding: 0.65rem 1.35rem;
+      border-radius: 10px;
+      font: 700 0.88rem/1 inherit;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      border: none;
+    }
+    .btn-primary {
+      background: var(--blue);
+      color: #fff;
+      box-shadow: 0 4px 14px rgba(37,99,235,.35);
+    }
+    .btn-primary:hover { background: #1d4ed8; transform: translateY(-1px); }
+    .btn-secondary {
+      background: rgba(255,255,255,0.08);
+      color: #e2e8f0;
+      border: 1px solid rgba(255,255,255,0.15);
+    }
+    .btn-secondary:hover { background: rgba(255,255,255,0.14); }
+
+    /* Status indicator */
+    #status-dot {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.45rem;
+      font-size: 0.72rem;
+      font-weight: 700;
+      color: #94a3b8;
+    }
+    #status-dot::before {
+      content: "";
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #f87171;
+      box-shadow: 0 0 0 3px rgba(248,113,113,0.25);
+    }
+    #status-dot.online::before {
+      background: #22c55e;
+      box-shadow: 0 0 0 3px rgba(34,197,94,0.25);
+    }
+
+    footer {
+      position: absolute;
+      bottom: 1.5rem;
+      font-size: 0.68rem;
+      color: #475569;
+      letter-spacing: 0.04em;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="icon-wrap">
+    <div class="board-ring">
+      <svg class="board-svg" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <!-- Board frame -->
+        <rect x="4" y="8" width="40" height="26" rx="4" stroke="#60a5fa" stroke-width="2.5"/>
+        <!-- Annotation line -->
+        <path d="M10 26 Q18 14 24 20 Q30 26 38 12"
+              stroke="#93c5fd" stroke-width="2.2" stroke-linecap="round"/>
+        <!-- Stand -->
+        <rect x="21" y="34" width="6" height="2" rx="1" fill="#475569"/>
+        <path d="M20 36 L28 36 L30 40 L18 40 Z" fill="#334155" stroke="#475569" stroke-width="1.5"/>
+        <!-- Offline X badge -->
+        <circle cx="38" cy="10" r="7" fill="#0f172a"/>
+        <circle cx="38" cy="10" r="6" fill="#ef4444"/>
+        <path d="M35.5 7.5 L40.5 12.5 M40.5 7.5 L35.5 12.5"
+              stroke="#ffffff" stroke-width="2" stroke-linecap="round"/>
+      </svg>
+    </div>
+  </div>
+
+  <div>
+    <h1>You're offline</h1>
+  </div>
+
+  <p>The Maples Academy Smartboard is not reachable right now.<br>
+     Your work is safe — reconnect to sync to the cloud.</p>
+
+  <div class="tip-box">
+    <strong>💡 While offline you can still</strong>
+    <div class="tip-row"><span>✏️</span><span>Draw, annotate, and use all tools on already-loaded slides</span></div>
+    <div class="tip-row"><span>📄</span><span>Open documents that were previously loaded in this session</span></div>
+    <div class="tip-row"><span>📥</span><span>Export your annotations as a PDF (no network needed)</span></div>
+    <div class="tip-row"><span>☁️</span><span>Changes will sync automatically when you come back online</span></div>
+  </div>
+
+  <div class="btn-group">
+    <button class="btn-primary" onclick="tryReload()">↻ Try again</button>
+    <button class="btn-secondary" onclick="openViewer()">📋 Open Smartboard</button>
+  </div>
+
+  <span id="status-dot">No internet connection</span>
+
+  <footer>MAPLES ACADEMY SMARTBOARD TOOL</footer>
+
+  <script>
+    // Update the status dot when connectivity changes
+    function updateStatus() {
+      const dot = document.getElementById('status-dot');
+      if (navigator.onLine) {
+        dot.textContent = 'Back online — click Try again';
+        dot.classList.add('online');
+      } else {
+        dot.textContent = 'No internet connection';
+        dot.classList.remove('online');
+      }
+    }
+
+    window.addEventListener('online',  updateStatus);
+    window.addEventListener('offline', updateStatus);
+    updateStatus();
+
+    // Auto-redirect to viewer when connectivity is restored
+    window.addEventListener('online', function () {
+      setTimeout(function () {
+        window.location.replace('/viewer');
+      }, 800);
+    });
+
+    function tryReload() {
+      window.location.reload();
+    }
+
+    function openViewer() {
+      window.location.href = '/viewer';
+    }
+  </script>
+</body>
+</html>

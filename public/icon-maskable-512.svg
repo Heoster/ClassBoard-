@@ -1,0 +1,12 @@
+<!-- Maskable icon: safe zone is inner 80% (409px). All content kept inside that zone. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- Full bleed background (required for maskable) -->
+  <rect width="512" height="512" fill="#2563eb"/>
+  <!-- Safe zone content (starts at 51px from each edge) -->
+  <rect x="82" y="108" width="348" height="236" rx="16" fill="#ffffff" opacity="0.14"/>
+  <rect x="82" y="108" width="348" height="236" rx="16" fill="none" stroke="#ffffff" stroke-width="9"/>
+  <path d="M118 270 Q175 168 256 210 Q337 258 394 138" fill="none" stroke="#ffffff" stroke-width="12" stroke-linecap="round"/>
+  <rect x="222" y="368" width="68" height="18" rx="9" fill="#ffffff" opacity="0.5"/>
+  <rect x="238" y="352" width="36" height="36" rx="7" fill="#ffffff"/>
+  <polygon points="238,388 274,388 256,408" fill="#ffffff"/>
+</svg>

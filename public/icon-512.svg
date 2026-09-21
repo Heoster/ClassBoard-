@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <rect width="512" height="512" rx="96" fill="#2563eb"/>
+  <!-- Board surface -->
+  <rect x="60" y="90" width="392" height="268" rx="18" fill="#ffffff" opacity="0.12"/>
+  <rect x="60" y="90" width="392" height="268" rx="18" fill="none" stroke="#ffffff" stroke-width="10"/>
+  <!-- Annotation strokes -->
+  <path d="M100 290 Q160 170 256 230 Q342 290 400 150" fill="none" stroke="#ffffff" stroke-width="13" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M120 310 L200 310" stroke="#93c5fd" stroke-width="8" stroke-linecap="round"/>
+  <!-- Pen tool -->
+  <rect x="208" y="390" width="96" height="22" rx="11" fill="#ffffff" opacity="0.45"/>
+  <rect x="235" y="368" width="42" height="42" rx="8" fill="#ffffff"/>
+  <polygon points="235,410 277,410 256,434" fill="#ffffff"/>
+  <!-- Stand -->
+  <rect x="230" y="358" width="52" height="12" rx="6" fill="#1d4ed8"/>
+</svg>
