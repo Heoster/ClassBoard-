@@ -1,5 +1,5 @@
 /**
- * Maples Academy Smartboard Tool — Service Worker
+ * Maples Academy Smartboard Tool: Service Worker
  *
  * Strategy per resource type:
  *   - App shell (HTML, JS, CSS, fonts, icons) → Cache-First
@@ -11,7 +11,7 @@
  * opens instantly from the local cache with zero network round-trips.
  */
 
-const CACHE_VERSION = "maples-v1";
+const CACHE_VERSION = "maples-v2";
 const SHELL_CACHE   = `${CACHE_VERSION}-shell`;
 const DATA_CACHE    = `${CACHE_VERSION}-data`;
 const CDN_CACHE     = `${CACHE_VERSION}-cdn`;
@@ -143,11 +143,11 @@ async function networkFirst(request, cacheName, timeoutMs) {
   } catch {
     const cached = await cache.match(request);
     if (cached) return cached;
-    // Last resort — return the offline viewer shell
+    // Last resort: return the offline viewer shell
     const offlineFallback = await cache.match("/viewer")
       ?? await cache.match("/offline.html")
       ?? await caches.match("/offline.html");
-    return offlineFallback ?? new Response("Offline — open the app while connected first.", {
+    return offlineFallback ?? new Response("You are offline. Open the app while connected first.", {
       status: 503,
       headers: { "Content-Type": "text/plain" },
     });

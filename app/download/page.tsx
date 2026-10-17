@@ -1,76 +1,80 @@
-import Link from "next/link"
+import Link from "next/link";
+import { statSync } from "node:fs";
+import path from "node:path";
+import { CaretLeft, DeviceMobile, DownloadSimple } from "@phosphor-icons/react/ssr";
 
 export const metadata = {
-  title: "Download – CODEEX STUDIO",
-  description: "Download the CODEEX STUDIO Android app (APK) for the Maples Academy Smartboard Tool.",
+  title: "Download CODEEX Studio",
+  description: "Download the CODEEX Studio Android app for the Maples Academy Smartboard Tool.",
+};
+
+function formatSize(bytes: number) {
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
+
+function apkSize() {
+  try {
+    return formatSize(statSync(path.join(process.cwd(), "public", "CODEEX-STUDIO.apk")).size);
+  } catch {
+    return "Android package";
+  }
+}
+
+const steps = [
+  "Tap Download APK on this page.",
+  "Open the file from your notifications or Downloads folder.",
+  "Tap Install. If Android asks, allow installs from this browser.",
+  "Open CODEEX Studio and sign in with your Maples Academy account.",
+];
 
 export default function DownloadPage() {
   return (
-    <main className="download-page">
-      <header className="download-header">
-        <Link className="brand" href="/">
-          <span className="brand-mark">M</span>
-          <span>
-            MAPLES ACADEMY
-            <br />
-            <small>SMARTBOARD TOOL</small>
-          </span>
-        </Link>
-      </header>
+    <main className="centered-shell" style={{ maxWidth: "520px" }}>
+      <Link href="/" className="btn btn-ghost" style={{ justifySelf: "start", paddingLeft: "0.5rem" }}>
+        <CaretLeft size={18} aria-hidden="true" /> Back
+      </Link>
 
-      <section className="download-hero">
-        <div className="download-card">
-          <span className="download-badge">ANDROID APP</span>
-          <h1>CODEEX STUDIO</h1>
-          <p className="download-desc">
-            The official Android companion app for the Maples Academy Smartboard Tool.
-            Upload PDFs, annotate lessons, and present from your phone or tablet.
-          </p>
-
-          <div className="download-meta">
-            <div className="meta-item">
-              <span className="meta-label">File</span>
-              <span className="meta-value">CODEEX-STUDIO.apk</span>
-            </div>
-            <div className="meta-item">
-              <span className="meta-label">Size</span>
-              <span className="meta-value">6.4 MB</span>
-            </div>
-            <div className="meta-item">
-              <span className="meta-label">Platform</span>
-              <span className="meta-value">Android</span>
-            </div>
-          </div>
-
-          <a
-            className="primary download-btn"
-            href="/CODEEX-STUDIO.apk"
-            download="CODEEX-STUDIO.apk"
-          >
-            ↓ Download APK
-          </a>
-
-          <p className="download-note">
-            You may need to enable <strong>Install from unknown sources</strong> in your Android
-            settings before installing. Go to{" "}
-            <em>Settings → Security → Install unknown apps</em> and allow your browser or file manager.
-          </p>
+      <div className="brand-lockup">
+        <span className="brand-mark" aria-hidden="true"><DeviceMobile size={24} /></span>
+        <div>
+          <strong>CODEEX Studio</strong>
+          <small>Android app</small>
         </div>
+      </div>
 
-        <aside className="download-aside">
-          <p className="eyebrow">HOW TO INSTALL</p>
-          <ol className="install-steps">
-            <li>Tap <strong>Download APK</strong> above</li>
-            <li>Open the downloaded file from your notifications or Downloads folder</li>
-            <li>Tap <strong>Install</strong> when prompted — allow unknown sources if asked</li>
-            <li>Open <strong>CODEEX STUDIO</strong> and sign in with your Maples Academy account</li>
-          </ol>
-          <Link className="secondary" href="/">
-            ← Back to home
-          </Link>
-        </aside>
+      <div className="stack">
+        <h1>Install on your Android device</h1>
+        <p className="muted">The companion app for the Smartboard Tool. Open PDFs, annotate lessons, and present from a phone or tablet.</p>
+      </div>
+
+      <dl className="list" style={{ margin: 0 }}>
+        <div className="list-item">
+          <dt className="list-item-meta" style={{ width: "6rem" }}>File</dt>
+          <dd className="mono" style={{ margin: 0 }}>CODEEX-STUDIO.apk</dd>
+        </div>
+        <div className="list-item">
+          <dt className="list-item-meta" style={{ width: "6rem" }}>Size</dt>
+          <dd style={{ margin: 0 }}>{apkSize()}</dd>
+        </div>
+        <div className="list-item">
+          <dt className="list-item-meta" style={{ width: "6rem" }}>Platform</dt>
+          <dd style={{ margin: 0 }}>Android phones and tablets</dd>
+        </div>
+      </dl>
+
+      <a className="btn btn-primary btn-block" href="/CODEEX-STUDIO.apk" download="CODEEX-STUDIO.apk">
+        <DownloadSimple size={20} aria-hidden="true" /> Download APK
+      </a>
+
+      <section className="stack" aria-labelledby="install-heading">
+        <h2 id="install-heading" style={{ fontSize: "1rem" }}>How to install</h2>
+        <ol className="step-list">
+          {steps.map(step => <li key={step}>{step}</li>)}
+        </ol>
+        <p className="helper">
+          If installation is blocked, open Android Settings, find Install unknown apps (under Apps or Security), and allow your browser or file manager.
+        </p>
       </section>
     </main>
-  )
+  );
 }

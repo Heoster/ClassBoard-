@@ -20,7 +20,7 @@ export function SignOutButton() {
   };
 
   return (
-    <button className="secondary" type="button" disabled={loading} onClick={() => void signOut()}>
+    <button className="btn btn-secondary btn-block" type="button" disabled={loading} onClick={() => void signOut()}>
       {loading ? "Signing out…" : "Sign out"}
     </button>
   );

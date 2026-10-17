@@ -4,18 +4,18 @@
  * Zero-dependency IndexedDB wrapper for offline-first annotation storage.
  *
  * Why IndexedDB over localStorage?
- *   • localStorage is synchronous — blocks the main thread on large payloads.
+ *   • localStorage is synchronous - blocks the main thread on large payloads.
  *   • IndexedDB is async, supports transactions, and stores structured objects
  *     without serialisation overhead (no JSON.stringify on every keystroke).
  *   • Quota: typically 60 %+ of available disk on Android Chrome vs ~5 MB for
- *     localStorage — critical for classrooms with large multi-page PDFs.
+ *     localStorage - critical for classrooms with large multi-page PDFs.
  *
  * Schema
  *   DB name : "maples-smartboard"
  *   Version : 1
  *
  *   Object store: "annotations"
- *     keyPath   : "id"          (Annotation.id — unique per annotation)
+ *     keyPath   : "id"          (Annotation.id - unique per annotation)
  *     indexes   : documentId    (for fast per-document queries)
  *                 updatedAt     (for sync watermark queries)
  *
@@ -27,7 +27,7 @@
  *     keyPath   : "queueId"     (auto-increment)
  *     indexes   : documentId, status
  *
- * All public functions are async and safe to call before the DB is open —
+ * All public functions are async and safe to call before the DB is open -
  * they await `getDb()` internally and queue up naturally via the Promise chain.
  */
 
@@ -256,7 +256,7 @@ export async function dequeue(queueId: number): Promise<void> {
   await wrap(store.delete(queueId));
 }
 
-/** Count pending items — useful for showing an offline indicator. */
+/** Count pending items - useful for showing an offline indicator. */
 export async function pendingCount(): Promise<number> {
   const db    = await getDb();
   const store = txStore(db, "sync-queue", "readonly");

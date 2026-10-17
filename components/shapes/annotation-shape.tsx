@@ -9,7 +9,7 @@ import type { ShapeComponentProps } from "./types";
 
 export { TransformBoundingBox, type TransformHandle } from "./transform-box";
 
-const PAD = 18; // extra invisible hit-area padding in SVG units (viewBox is 0–1000)
+const PAD = 18; // extra invisible hit-area padding in SVG units (viewBox is 0-1000)
 
 /** Wraps any shape in a <g> with an invisible enlarged rect for easier touch/tap selection */
 function HitAreaWrapper({

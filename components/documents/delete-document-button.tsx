@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { Trash } from "@phosphor-icons/react";
 import { getSupabaseBrowserClient } from "../../lib/supabase/client";
 
 type DialogState =
@@ -54,42 +55,29 @@ export function DeleteDocumentButton({
   return (
     <>
       <button
-        className="document-delete"
+        className="btn-icon is-danger"
         type="button"
         onClick={() => setDialog({ type: "confirm" })}
         disabled={deleting}
         aria-label={`Delete ${filename}`}
-        title="Delete document"
+        title="Delete"
       >
-        {deleting ? "Deleting…" : "Delete"}
+        <Trash size={20} aria-hidden="true" />
       </button>
 
-      {/* Accessible inline confirm dialog — replaces window.confirm which is
-          blocked in PWA standalone mode */}
+      {/* Inline confirm dialog. window.confirm is unreliable in installed TWA/PWA shells. */}
       {dialog.type === "confirm" && (
-        <div
-          className="confirm-backdrop"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="delete-confirm-msg"
-        >
-          <div className="confirm-card">
-            <p id="delete-confirm-msg">
-              Delete <strong>{filename}</strong>? This cannot be undone.
+        <div className="dialog-backdrop" role="presentation">
+          <div className="dialog-card" role="dialog" aria-modal="true" aria-labelledby="delete-confirm-title" aria-describedby="delete-confirm-msg">
+            <h2 id="delete-confirm-title" style={{ fontSize: "1.125rem" }}>Delete this lesson?</h2>
+            <p id="delete-confirm-msg" className="muted">
+              <strong style={{ color: "var(--text)" }}>{filename}</strong> will be removed from your library on every device. This cannot be undone.
             </p>
-            <div className="confirm-actions">
-              <button
-                type="button"
-                className="secondary"
-                onClick={() => setDialog({ type: "idle" })}
-              >
+            <div className="dialog-actions">
+              <button type="button" className="btn btn-secondary" onClick={() => setDialog({ type: "idle" })}>
                 Cancel
               </button>
-              <button
-                type="button"
-                className="danger-confirm"
-                onClick={() => void handleDeleteConfirmed()}
-              >
+              <button type="button" className="btn btn-danger" onClick={() => void handleDeleteConfirmed()}>
                 Delete
               </button>
             </div>
@@ -97,24 +85,14 @@ export function DeleteDocumentButton({
         </div>
       )}
 
-      {/* Accessible inline error dialog — replaces window.alert */}
+      {/* Inline error dialog. window.alert is unreliable in installed TWA/PWA shells. */}
       {dialog.type === "error" && (
-        <div
-          className="confirm-backdrop"
-          role="alertdialog"
-          aria-modal="true"
-          aria-labelledby="delete-error-msg"
-        >
-          <div className="confirm-card">
-            <p id="delete-error-msg">
-              <strong>Error:</strong> {dialog.message}
-            </p>
-            <div className="confirm-actions">
-              <button
-                type="button"
-                className="secondary"
-                onClick={() => setDialog({ type: "idle" })}
-              >
+        <div className="dialog-backdrop" role="presentation">
+          <div className="dialog-card" role="alertdialog" aria-modal="true" aria-labelledby="delete-error-title" aria-describedby="delete-error-msg">
+            <h2 id="delete-error-title" style={{ fontSize: "1.125rem" }}>Could not delete</h2>
+            <p id="delete-error-msg" className="muted">{dialog.message}</p>
+            <div className="dialog-actions">
+              <button type="button" className="btn btn-primary" onClick={() => setDialog({ type: "idle" })}>
                 Close
               </button>
             </div>

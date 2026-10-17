@@ -1,6 +1,13 @@
 "use client";
 
-import { useEffect, useRef, useState, type PointerEvent, type DragEvent } from "react";
+import { useEffect, useRef, useState, type PointerEvent, type DragEvent, type ReactNode } from "react";
+import {
+  ArrowLeft, ArrowUUpLeft, ArrowUUpRight, ArrowsIn, ArrowsOut, ArrowUpRight, ChartLineUp, Circle, Cloud, Copy,
+  CaretDoubleDown, CaretDown, CaretLeft, CaretRight, CaretUp, Cross, Cursor, Cylinder, Diamond, DotsThree, Eraser,
+  Export, FilePdf, HandGrabbing, Heart, Hexagon, Highlighter, Image as ImageIcon, LineSegment, MagnifyingGlass, MagnifyingGlassMinus,
+  MagnifyingGlassPlus, Octagon, Parallelogram, PencilSimple, PenNib, Pentagon, Play, Plus, Presentation, Scissors, Shapes,
+  Sliders, Square, Star, Stop, TextT, Trash, Triangle, X,
+} from "@phosphor-icons/react";
 import { useSearchParams } from "next/navigation";
 import { importDocument } from "../../lib/importers";
 import { pdfExporter } from "../../lib/export/pdf-exporter";
@@ -26,6 +33,18 @@ const fontSizePresets = [18, 28, 36, 48, 64, 80, 96, 120];
 const drawingTypes: AnnotationType[] = ["ink", "calligraphy", "highlighter"];
 type ViewerPage = { id: string; sourcePage?: number; background: string; aspectRatio?: "16:9" | "4:3" | "portrait" };
 const pageLayoutKey = (documentId: string) => `maples-page-layout:${documentId}`;
+
+// Input arbitration. A pen touching the slide suppresses finger input for this
+// long, which rejects a palm resting on the glass while writing.
+const PALM_HOLDOFF_MS = 1200;
+const MIN_ZOOM = 0.25;
+const MAX_ZOOM = 4;
+type PointerOwner = { id: number; type: string };
+type PinchGesture = { ids: [number, number]; startDist: number; startMid: Point; startZoom: number; startPan: Point };
+const clampZoom = (value: number) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, value));
+const distance = (a: Point, b: Point) => Math.hypot(a.x - b.x, a.y - b.y);
+const midpoint = (a: Point, b: Point): Point => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
+const capturePointer = (el: Element, id: number) => { try { el.setPointerCapture(id); } catch {} };
 
 function smoothStrokePoints(points: Point[], passes = 1): Point[] {
   if (!points || points.length <= 2) return points;
@@ -205,27 +224,126 @@ function PageThumbnail({ pdf, sourcePage, pageNumber, background, active, onClic
     return () => { cancelled = true; };
   }, [pdf, sourcePage, pageNumber, background]);
   return (
-    <button className={`page-thumb ${active ? "active" : ""}`} onClick={onClick} aria-label={`Go to page ${pageNumber}`}>
-      <canvas ref={thumbnail} />
-      <span className="page-thumb-num">Page {pageNumber}</span>
+    <button type="button" className={`page-thumb ${active ? "is-active" : ""}`} onClick={onClick} aria-label={`Go to page ${pageNumber}`} aria-current={active ? "page" : undefined}>
+      <span className="page-thumb-frame"><canvas ref={thumbnail} /></span>
+      <span className="page-thumb-num">{pageNumber}</span>
     </button>
   );
 }
 
-// ─── Inline confirm dialog (replaces window.confirm) ──────────────────────────
+// Inline confirm dialog (replaces window.confirm, which is not reliable in a TWA).
 function ConfirmDialog({ message, onConfirm, onCancel }: { message: string; onConfirm: () => void; onCancel: () => void }) {
   return (
-    <div className="confirm-backdrop" role="dialog" aria-modal="true" aria-labelledby="confirm-msg">
-      <div className="confirm-card">
+    <div className="dialog-backdrop" role="presentation" onClick={e => { if (e.target === e.currentTarget) onCancel(); }}>
+      <div className="dialog-card" role="alertdialog" aria-modal="true" aria-labelledby="confirm-msg">
         <p id="confirm-msg">{message}</p>
-        <div className="confirm-actions">
-          <button type="button" className="secondary" onClick={onCancel}>Cancel</button>
-          <button type="button" className="danger-confirm" onClick={onConfirm}>Confirm</button>
+        <div className="dialog-actions">
+          <button type="button" className="btn btn-secondary" onClick={onCancel}>Cancel</button>
+          <button type="button" className="btn btn-danger" onClick={onConfirm}>Confirm</button>
         </div>
       </div>
     </div>
   );
 }
+
+// Dock button: icon over a short label. Sized for a 48px-plus touch target.
+function DockButton({ icon, label, active = false, expanded, disabled = false, onClick, title }: {
+  icon: ReactNode; label: string; active?: boolean; expanded?: boolean; disabled?: boolean;
+  onClick: () => void; title?: string;
+}) {
+  return (
+    <button
+      type="button"
+      className={`dock-btn ${active ? "is-active" : ""}`}
+      onClick={onClick}
+      disabled={disabled}
+      title={title ?? label}
+      aria-label={label}
+      aria-pressed={active}
+      aria-expanded={expanded}
+      aria-haspopup={expanded === undefined ? undefined : "menu"}
+    >
+      <span className="dock-btn-icon" aria-hidden="true">{icon}</span>
+      <span className="dock-btn-label">{label}</span>
+    </button>
+  );
+}
+
+// Menu row used by the dock dropdowns and the overflow menu.
+function MenuItem({ icon, label, active = false, danger = false, disabled = false, onClick }: {
+  icon: ReactNode; label: string; active?: boolean; danger?: boolean; disabled?: boolean; onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="menuitem"
+      className={`menu-item ${active ? "is-active" : ""} ${danger ? "is-danger" : ""}`}
+      onClick={onClick}
+      disabled={disabled}
+    >
+      <span className="menu-item-icon" aria-hidden="true">{icon}</span>
+      <span>{label}</span>
+    </button>
+  );
+}
+
+const SHAPE_SECTIONS: { label: string; items: { tool: string; label: string; icon: ReactNode }[] }[] = [
+  {
+    label: "Basic",
+    items: [
+      { tool: "rectangle", label: "Rectangle", icon: <Square size={22} aria-hidden="true" /> },
+      { tool: "ellipse", label: "Circle", icon: <Circle size={22} aria-hidden="true" /> },
+      { tool: "triangle", label: "Triangle", icon: <Triangle size={22} aria-hidden="true" /> },
+      { tool: "right-triangle", label: "Right tri", icon: <Triangle size={22} aria-hidden="true" /> },
+      { tool: "diamond", label: "Diamond", icon: <Diamond size={22} aria-hidden="true" /> },
+      { tool: "parallelogram", label: "Parallel", icon: <Parallelogram size={22} aria-hidden="true" /> },
+    ],
+  },
+  {
+    label: "Polygons",
+    items: [
+      { tool: "pentagon", label: "Pentagon", icon: <Pentagon size={22} aria-hidden="true" /> },
+      { tool: "hexagon", label: "Hexagon", icon: <Hexagon size={22} aria-hidden="true" /> },
+      { tool: "octagon", label: "Octagon", icon: <Octagon size={22} aria-hidden="true" /> },
+      { tool: "cross", label: "Cross", icon: <Cross size={22} aria-hidden="true" /> },
+    ],
+  },
+  {
+    label: "Decorative",
+    items: [
+      { tool: "star", label: "Star", icon: <Star size={22} aria-hidden="true" /> },
+      { tool: "heart", label: "Heart", icon: <Heart size={22} aria-hidden="true" /> },
+      { tool: "cloud", label: "Cloud", icon: <Cloud size={22} aria-hidden="true" /> },
+      { tool: "cylinder", label: "Cylinder", icon: <Cylinder size={22} aria-hidden="true" /> },
+    ],
+  },
+  {
+    label: "Lines and data",
+    items: [
+      { tool: "line", label: "Line", icon: <LineSegment size={22} aria-hidden="true" /> },
+      { tool: "arrow", label: "Arrow", icon: <ArrowUpRight size={22} aria-hidden="true" /> },
+      { tool: "graph", label: "Graph", icon: <ChartLineUp size={22} aria-hidden="true" /> },
+    ],
+  },
+];
+
+const SHAPE_TOOLS: string[] = SHAPE_SECTIONS.flatMap(section => section.items.map(item => item.tool));
+
+// Settings switch row. Uses role="switch" so screen readers announce state.
+function ToggleRow({ label, hint, on, onToggle }: { label: string; hint: string; on: boolean; onToggle: () => void }) {
+  return (
+    <div className="toggle-row">
+      <div className="toggle-text">
+        <strong>{label}</strong>
+        <small>{hint}</small>
+      </div>
+      <button type="button" role="switch" aria-checked={on} aria-label={label} className={`switch ${on ? "is-on" : ""}`} onClick={onToggle}>
+        <span className="switch-thumb" aria-hidden="true" />
+      </button>
+    </div>
+  );
+}
+
 
 export function ViewerClient() {
   const canvas = useRef<HTMLCanvasElement>(null);
@@ -257,8 +375,8 @@ export function ViewerClient() {
   const [size, setSize] = useState(100);
   const [presenting, setPresenting] = useState(false);
   const [status, setStatusRaw] = useState("Cloud sync ready");
-  const [statusDismissed, setStatusDismissed] = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  // The page list starts open on wide screens and collapsed on phones, where it would cover the slide.
+  const [sidebarOpen, setSidebarOpen] = useState(() => typeof window === "undefined" || window.matchMedia("(min-width: 600px)").matches);
   const [propertiesOpen, setPropertiesOpen] = useState(false);
   const [dockCollapsed, setDockCollapsed] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -266,10 +384,9 @@ export function ViewerClient() {
   const [textValue, setTextValue] = useState("");
   const [editingId, setEditingId] = useState<string>();
   const [zoomMenuOpen, setZoomMenuOpen] = useState(false);
-  const [showPageCounter, setShowPageCounter] = useState(true);
-  const pageCounterTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [eraserSize, setEraserSize] = useState(24);
-  const [isErasing, setIsErasing] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const [gesturing, setGesturing] = useState(false);
   const [eraserPos, setEraserPos] = useState<Point | null>(null);
   const [activeDropdown, setActiveDropdown] = useState<"pen" | "eraser" | "shape" | "line" | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -309,18 +426,7 @@ export function ViewerClient() {
     setConfirmState({ message, onConfirm });
   };
 
-  const triggerPageCounter = () => {
-    setShowPageCounter(true);
-    if (pageCounterTimer.current) clearTimeout(pageCounterTimer.current);
-    pageCounterTimer.current = setTimeout(() => setShowPageCounter(false), 2000);
-  };
-
-  useEffect(() => {
-    triggerPageCounter();
-    return () => { if (pageCounterTimer.current) clearTimeout(pageCounterTimer.current); };
-  }, [page]);
-
-  // Close dropdowns on Escape — FIX #17
+  // Close dropdowns on Escape - FIX #17
   useEffect(() => {
     const onKeyEscape = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
@@ -333,7 +439,7 @@ export function ViewerClient() {
     return () => document.removeEventListener("keydown", onKeyEscape);
   }, []);
 
-  // Close dropdowns when clicking outside — FIX #17
+  // Close dropdowns when clicking outside - FIX #17
   // Uses "click" (not "mousedown") so dropdown button clicks register before close
   useEffect(() => {
     const onClickOutside = (e: MouseEvent) => {
@@ -364,15 +470,13 @@ export function ViewerClient() {
     return () => document.removeEventListener("fullscreenchange", onFsChange);
   }, []);
 
-  const setStatus = (msg: string) => { setStatusRaw(msg); setStatusDismissed(false); };
+  const setStatus = (msg: string) => { setStatusRaw(msg); };
 
   // Pan & Zoom state
   const [zoom, setZoom] = useState(1.0);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [isPanning, setIsPanning] = useState(false);
-  const panStart = useRef({ x: 0, y: 0 });
 
-  const pinchRef = useRef<{ dist: number; zoom: number; pan: { x: number; y: number }; mid: { x: number; y: number } } | null>(null);
   const zoomRef = useRef(zoom);
   const panRef = useRef(pan);
   useEffect(() => { zoomRef.current = zoom; }, [zoom]);
@@ -491,69 +595,259 @@ export function ViewerClient() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
 
-  // ─── Pinch-to-zoom ──────────────────────────────────────────────────────────
-  const pinchHandlersRef = useRef<{ onTouchStart: (e: TouchEvent) => void; onTouchMove: (e: TouchEvent) => void; onTouchEnd: (e: TouchEvent) => void } | null>(null);
+  // ─── Input arbitration ────────────────────────────────────────────────────
+  // Every pointer is tracked by id, so a resting palm can never draw, drag, or
+  // zoom while a stylus is writing, and two fingers always mean "navigate".
+  //   pen    draws, selects, erases, and pans when the Pan tool is active.
+  //   touch  ignored while a pen is in contact or was active in the last
+  //          PALM_HOLDOFF_MS. Two fingers start a pinch-zoom and pan gesture
+  //          that cancels any single-finger stroke, erase, or drag.
+  //   mouse  unchanged: left button draws, middle button pans.
+  const frame = useRef<HTMLDivElement>(null);
+  const touchPoints = useRef(new Map<number, Point>());
+  const penContacts = useRef(new Set<number>());
+  const lastPenAt = useRef(0);
+  const ignoredPointers = useRef(new Set<number>());
+  const drawOwner = useRef<PointerOwner | null>(null);
+  const eraseOwner = useRef<(PointerOwner & { snapshot: Annotation[] }) | null>(null);
+  const panOwner = useRef<(PointerOwner & { start: Point; origin: Point }) | null>(null);
+  const transformOwner = useRef<PointerOwner | null>(null);
+  const gestureRef = useRef<PinchGesture | null>(null);
 
-  useEffect(() => {
-    const el = stage.current;
-    if (!el) return;
-    const getTouchDist = (t: TouchList) => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
-    const getTouchMid = (t: TouchList) => ({ x: (t[0].clientX + t[1].clientX) / 2, y: (t[0].clientY + t[1].clientY) / 2 });
+  const penRecentlyActive = () => penContacts.current.size > 0 || Date.now() - lastPenAt.current < PALM_HOLDOFF_MS;
 
-    const onTouchStart = (e: TouchEvent) => {
-      if (e.touches.length === 2) {
-        e.preventDefault();
-        pinchRef.current = { dist: getTouchDist(e.touches), zoom: zoomRef.current, pan: { ...panRef.current }, mid: getTouchMid(e.touches) };
+  const applyView = (nextZoom: number, nextPan: Point) => {
+    zoomRef.current = nextZoom;
+    panRef.current = nextPan;
+    setZoom(nextZoom);
+    setPan(nextPan);
+  };
+  const setZoomLevel = (value: number) => applyView(clampZoom(+value.toFixed(2)), panRef.current);
+  const resetView = () => applyView(1, { x: 0, y: 0 });
+
+  // Screen position of the page frame's centre. Layout offsets are used so the
+  // current transform does not shift the reference point.
+  const frameCenter = (): Point => {
+    const s = stage.current;
+    const f = frame.current;
+    if (!s || !f) return { x: 0, y: 0 };
+    const r = s.getBoundingClientRect();
+    return {
+      x: r.left + s.clientLeft + f.offsetLeft + f.offsetWidth / 2,
+      y: r.top + s.clientTop + f.offsetTop + f.offsetHeight / 2,
+    };
+  };
+
+  const finishErase = () => {
+    const owner = eraseOwner.current;
+    eraseOwner.current = null;
+    setEraserPos(null);
+    if (!owner) return;
+    const final = annotationsForErase.current;
+    if (final === owner.snapshot) return;
+    setHistory(h => [...h, owner.snapshot]);
+    setFuture([]);
+    void saveCloud(final).catch(err => setStatus(err instanceof Error ? err.message : "Cloud save failed"));
+  };
+
+  // Drops whatever a finger started. Runs when a pen touches down or when a
+  // second finger turns the input into a navigation gesture.
+  const cancelTouchWork = () => {
+    if (drawOwner.current?.type === "touch") {
+      drawOwner.current = null;
+      setDraft(null);
+    }
+    if (eraseOwner.current?.type === "touch") finishErase();
+    if (panOwner.current?.type === "touch") {
+      panOwner.current = null;
+      setIsPanning(false);
+    }
+    if (transformOwner.current?.type === "touch") endTransform();
+  };
+
+  const startGesture = () => {
+    const entries = [...touchPoints.current.entries()];
+    if (entries.length < 2) return;
+    const [[idA, a], [idB, b]] = entries;
+    cancelTouchWork();
+    ignoredPointers.current.add(idA);
+    ignoredPointers.current.add(idB);
+    gestureRef.current = {
+      ids: [idA, idB],
+      startDist: Math.max(distance(a, b), 1),
+      startMid: midpoint(a, b),
+      startZoom: zoomRef.current,
+      startPan: { ...panRef.current },
+    };
+    setGesturing(true);
+  };
+
+  // Keeps the content under the midpoint fixed while the fingers move:
+  // pan' = (M - C) - k * (M0 - C - pan0), where k = zoom' / zoom0.
+  const updateGesture = () => {
+    const g = gestureRef.current;
+    if (!g) return;
+    const a = touchPoints.current.get(g.ids[0]);
+    const b = touchPoints.current.get(g.ids[1]);
+    if (!a || !b) return;
+    const nextZoom = clampZoom(g.startZoom * (distance(a, b) / g.startDist));
+    const k = nextZoom / g.startZoom;
+    const m = midpoint(a, b);
+    const c = frameCenter();
+    applyView(nextZoom, {
+      x: (m.x - c.x) - k * (g.startMid.x - c.x - g.startPan.x),
+      y: (m.y - c.y) - k * (g.startMid.y - c.y - g.startPan.y),
+    });
+  };
+
+  const endGesture = () => {
+    if (!gestureRef.current) return;
+    gestureRef.current = null;
+    setGesturing(false);
+  };
+
+  const onStagePointerDown = (e: PointerEvent<HTMLDivElement>) => {
+    const id = e.pointerId;
+    const pt: Point = { x: e.clientX, y: e.clientY };
+    if (e.pointerType === "pen") {
+      penContacts.current.add(id);
+      lastPenAt.current = Date.now();
+      endGesture();
+      cancelTouchWork();
+    } else if (e.pointerType === "touch") {
+      if (penRecentlyActive()) {
+        ignoredPointers.current.add(id);
+        e.stopPropagation();
+        return;
       }
-    };
-    const onTouchMove = (e: TouchEvent) => {
-      if (e.touches.length === 2 && pinchRef.current) {
-        e.preventDefault();
-        const scale = getTouchDist(e.touches) / pinchRef.current.dist;
-        const newZoom = Math.max(0.25, Math.min(4.0, +(pinchRef.current.zoom * scale).toFixed(3)));
-        const newMid = getTouchMid(e.touches);
-        const dx = newMid.x - pinchRef.current.mid.x;
-        const dy = newMid.y - pinchRef.current.mid.y;
-        const zoomDelta = newZoom - pinchRef.current.zoom;
-        const rect = el.getBoundingClientRect();
-        const focalX = pinchRef.current.mid.x - rect.left - rect.width / 2;
-        const focalY = pinchRef.current.mid.y - rect.top - rect.height / 2;
-        setZoom(newZoom);
-        setPan({ x: pinchRef.current.pan.x + dx - focalX * zoomDelta, y: pinchRef.current.pan.y + dy - focalY * zoomDelta });
+      touchPoints.current.set(id, pt);
+      if (gestureRef.current || touchPoints.current.size >= 2) {
+        if (!gestureRef.current) startGesture();
+        ignoredPointers.current.add(id);
+        e.stopPropagation();
+        return;
       }
-    };
-    const onTouchEnd = (e: TouchEvent) => { if (e.touches.length < 2) pinchRef.current = null; };
+    }
+    if (tool === "pan" || (e.pointerType === "mouse" && e.button === 1)) {
+      panOwner.current = { id, type: e.pointerType, start: pt, origin: { ...panRef.current } };
+      try { e.currentTarget.setPointerCapture(id); } catch {}
+      setIsPanning(true);
+    }
+  };
 
-    pinchHandlersRef.current = { onTouchStart, onTouchMove, onTouchEnd };
-    el.addEventListener("touchstart", onTouchStart, { passive: false });
-    el.addEventListener("touchmove", onTouchMove, { passive: false });
-    el.addEventListener("touchend", onTouchEnd, { passive: true });
-    el.addEventListener("touchcancel", onTouchEnd, { passive: true });
-    return () => {
-      el.removeEventListener("touchstart", onTouchStart);
-      el.removeEventListener("touchmove", onTouchMove);
-      el.removeEventListener("touchend", onTouchEnd);
-      el.removeEventListener("touchcancel", onTouchEnd);
-      pinchHandlersRef.current = null;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  const onStagePointerMove = (e: PointerEvent<HTMLDivElement>) => {
+    const id = e.pointerId;
+    if (e.pointerType === "pen") lastPenAt.current = Date.now();
+    if (touchPoints.current.has(id)) {
+      touchPoints.current.set(id, { x: e.clientX, y: e.clientY });
+      updateGesture();
+    }
+    const pan = panOwner.current;
+    if (pan && pan.id === id) {
+      applyView(zoomRef.current, {
+        x: pan.origin.x + (e.clientX - pan.start.x),
+        y: pan.origin.y + (e.clientY - pan.start.y),
+      });
+    }
+    if (ignoredPointers.current.has(id)) e.stopPropagation();
+  };
 
-  useEffect(() => {
-    const svg = overlay.current;
-    const h = pinchHandlersRef.current;
-    if (!svg || !h) return;
-    svg.addEventListener("touchstart", h.onTouchStart, { passive: false });
-    svg.addEventListener("touchmove", h.onTouchMove, { passive: false });
-    svg.addEventListener("touchend", h.onTouchEnd, { passive: true });
-    svg.addEventListener("touchcancel", h.onTouchEnd, { passive: true });
-    return () => {
-      svg.removeEventListener("touchstart", h.onTouchStart);
-      svg.removeEventListener("touchmove", h.onTouchMove);
-      svg.removeEventListener("touchend", h.onTouchEnd);
-      svg.removeEventListener("touchcancel", h.onTouchEnd);
-    };
-  }, [pageOrder]);
+  const onStagePointerEnd = (e: PointerEvent<HTMLDivElement>) => {
+    const id = e.pointerId;
+    if (e.pointerType === "pen") {
+      penContacts.current.delete(id);
+      lastPenAt.current = Date.now();
+    }
+    touchPoints.current.delete(id);
+    if (gestureRef.current?.ids.includes(id)) endGesture();
+    if (panOwner.current?.id === id) {
+      panOwner.current = null;
+      setIsPanning(false);
+    }
+    if (ignoredPointers.current.delete(id)) e.stopPropagation();
+  };
+
+  const onOverlayPointerDown = (e: PointerEvent<SVGSVGElement>) => {
+    if (panOwner.current || drawOwner.current || eraseOwner.current) return;
+    if (e.pointerType === "mouse" && e.button !== 0) return;
+    setActiveDropdown(null);
+    setZoomMenuOpen(false);
+    setMoreOpen(false);
+    if (autoHideDock && drawingTypes.includes(tool as AnnotationType)) setDockCollapsed(true);
+    const pt = point(e);
+    const owner: PointerOwner = { id: e.pointerId, type: e.pointerType };
+    if (tool === "select") {
+      setSelectedId(undefined);
+      return;
+    }
+    if (tool === "pan") return;
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch {}
+    if (tool.includes("eraser")) {
+      eraseOwner.current = { ...owner, snapshot: annotationsForErase.current };
+      setEraserPos(pt);
+      eraseAtPoint(pt);
+    } else {
+      drawOwner.current = owner;
+      setDraft([pt]);
+    }
+  };
+
+  const onOverlayPointerMove = (e: PointerEvent<SVGSVGElement>) => {
+    const pt = point(e);
+    if (tool.includes("eraser") || (laserPointer && e.pointerType !== "touch")) setEraserPos(pt);
+    if (tool.includes("eraser")) {
+      if (eraseOwner.current?.id === e.pointerId) eraseAtPoint(pt);
+      return;
+    }
+    if (transformOwner.current) {
+      if (transformOwner.current.id === e.pointerId) updateTransform(e);
+      return;
+    }
+    if (drawOwner.current?.id !== e.pointerId) return;
+    const nativeEvt = e.nativeEvent as unknown as { getCoalescedEvents?: () => globalThis.PointerEvent[] };
+    const coalesced = typeof nativeEvt.getCoalescedEvents === "function" && nativeEvt.getCoalescedEvents().length > 0
+      ? nativeEvt.getCoalescedEvents()
+      : [e.nativeEvent as unknown as globalThis.PointerEvent];
+    const rect = (pageEl.current ?? overlay.current!).getBoundingClientRect();
+    const newPoints: Point[] = coalesced.map(c => normalizePoint(
+      { x: c.clientX - rect.left, y: c.clientY - rect.top },
+      { width: rect.width, height: rect.height }
+    ));
+    setDraft(curr => {
+      if (!curr) return newPoints;
+      const updated = [...curr];
+      for (const p of newPoints) {
+        const last = updated.at(-1);
+        if (!last || Math.hypot(p.x - last.x, p.y - last.y) >= 0.0006) updated.push(p);
+      }
+      return updated;
+    });
+  };
+
+  // Shared end handler for pointerup and pointercancel. A cancelled stroke is
+  // still committed so a system interruption never throws away written work.
+  const onOverlayPointerEnd = (e: PointerEvent<SVGSVGElement>) => {
+    const id = e.pointerId;
+    if (eraseOwner.current?.id === id) finishErase();
+    if (transformOwner.current?.id === id) endTransform();
+    if (drawOwner.current?.id === id) {
+      drawOwner.current = null;
+      finish(e);
+    }
+    if (e.currentTarget.hasPointerCapture?.(id)) {
+      try { e.currentTarget.releasePointerCapture(id); } catch {}
+    }
+  };
+
+  const onOverlayPointerLeave = () => {
+    if (!eraseOwner.current) setEraserPos(null);
+  };
+
+  const resetDockPosition = () => {
+    setDockPos(null);
+    if (dockDragRef.current) dockDragRef.current.dragging = false;
+  };
+
 
   // ─── PDF / Canvas render ────────────────────────────────────────────────────
   useEffect(() => {
@@ -653,6 +947,7 @@ export function ViewerClient() {
         });
       } else if (e.key === "Escape") {
         setSelectedId(undefined);
+        drawOwner.current = null;
         setDraft(null);
         setTextPoints(null);
         setActiveDropdown(null);
@@ -664,7 +959,7 @@ export function ViewerClient() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ─── Draggable dock — pointer/touch handlers ─────────────────────────────
+  // ─── Draggable dock - pointer/touch handlers ─────────────────────────────
   // We attach global pointermove/pointerup so dragging works even if the
   // cursor leaves the grip handle during fast movement.
   useEffect(() => {
@@ -805,7 +1100,7 @@ export function ViewerClient() {
   const open = async (file: File) => {
     let client;
     try { client = getSupabaseBrowserClient(); } catch {
-      setStatus("Supabase is not configured — viewing locally.");
+      setStatus("Supabase is not configured. Viewing locally.");
       const imported = await importDocument(file);
       await loadPdf(imported.data);
       return;
@@ -877,7 +1172,7 @@ export function ViewerClient() {
       pts = isClick ? [{ x: rawBox.x, y: rawBox.y }, { x: rawBox.x + rawBox.width, y: rawBox.y + rawBox.height }] : points;
     }
 
-    // Shapes are always outline-only (fill: "none") — no fill colour applied
+    // Shapes are always outline-only (fill: "none") - no fill colour applied
     const isNonShapeTool = drawingTypes.includes(tool as AnnotationType)
       || (tool as string) === "line"
       || (tool as string) === "arrow"
@@ -1070,6 +1365,7 @@ export function ViewerClient() {
   const startTransform = (e: PointerEvent, handle: TransformHandle, annotation: Annotation) => {
     e.stopPropagation();
     e.currentTarget.setPointerCapture(e.pointerId);
+    transformOwner.current = { id: e.pointerId, type: e.pointerType };
     setSelectedId(annotation.id);
     setPropertiesOpen(true);
     setTransforming({ handle, startPoint: point(e), initial: { x: annotation.x, y: annotation.y, width: annotation.width, height: annotation.height, rotation: annotation.rotation ?? 0, points: annotation.points ? [...annotation.points] : undefined } });
@@ -1108,12 +1404,60 @@ export function ViewerClient() {
     }
   };
 
-  const endTransform = () => { if (transforming) { setTransforming(null); void saveCloud(annotationsRef.current).catch(err => setStatus(err instanceof Error ? err.message : "Cloud save failed")); } };
+  const endTransform = () => { transformOwner.current = null; if (transforming) { setTransforming(null); void saveCloud(annotationsRef.current).catch(err => setStatus(err instanceof Error ? err.message : "Cloud save failed")); } };
 
-  const isErrorStatus = status.toLowerCase().includes("failed") || status.toLowerCase().includes("unavailable") || status.toLowerCase().includes("error");
+  const isErrorStatus = /failed|unavailable|error|not configured/i.test(status);
+  const shapeToolActive = SHAPE_TOOLS.includes(tool);
+  const penIcon = tool === "calligraphy" ? <PenNib size={22} aria-hidden="true" /> : tool === "highlighter" ? <Highlighter size={22} aria-hidden="true" /> : <PencilSimple size={22} aria-hidden="true" />;
+  const penLabel = tool === "calligraphy" ? "Brush" : tool === "highlighter" ? "Highlight" : "Pen";
+  const strokeColor = selectedAnnotation?.style.color ?? color;
+  const strokeWidthValue = selectedAnnotation?.style.strokeWidth ?? width;
+  const opacityValue = selectedAnnotation?.style.opacity ?? opacity;
+  const fontSizeValue = selectedAnnotation?.style.fontSize ?? fontSize;
+  // Presenting: the control strip fades after 3 s without input, and returns on any touch, pen, or key.
+  const [barAwake, setBarAwake] = useState(true);
+  useEffect(() => {
+    if (!presenting) {
+      setBarAwake(true);
+      return;
+    }
+    let timer = window.setTimeout(() => setBarAwake(false), 3000);
+    const wake = () => {
+      setBarAwake(true);
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => setBarAwake(false), 3000);
+    };
+    const events = ["pointerdown", "pointermove", "keydown"] as const;
+    events.forEach(name => window.addEventListener(name, wake));
+    return () => {
+      window.clearTimeout(timer);
+      events.forEach(name => window.removeEventListener(name, wake));
+    };
+  }, [presenting]);
+
+  // Presenting keys: arrows and Page keys move through pages, Escape leaves presentation.
+  useEffect(() => {
+    if (!presenting) return;
+    const onPresentKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setPresenting(false);
+      } else if (e.key === "ArrowRight" || e.key === "PageDown") {
+        e.preventDefault();
+        setPage(v => Math.min(v + 1, pages));
+      } else if (e.key === "ArrowLeft" || e.key === "PageUp") {
+        e.preventDefault();
+        setPage(v => Math.max(v - 1, 1));
+      }
+    };
+    window.addEventListener("keydown", onPresentKey);
+    return () => window.removeEventListener("keydown", onPresentKey);
+  }, [presenting, pages]);
+
+  const showStylePanel = propertiesOpen && !dockCollapsed && !presenting;
+  const hasSelectionPanel = Boolean(selectedAnnotation);
 
   return (
-    <main className={presenting ? "viewer presenting" : "viewer"}>
+    <main className={`viewer ${presenting ? "is-presenting" : ""}`}>
       {/* Hidden file input for images */}
       <input
         ref={imageInputRef}
@@ -1127,47 +1471,21 @@ export function ViewerClient() {
         }}
       />
 
-      {/* ─── TOP HEADER — FIX #23: clear visual grouping ───────���────────── */}
-      <header className="viewer-header" onPointerDown={e => e.stopPropagation()} onTouchStart={e => e.stopPropagation()}>
-        {/* Brand group */}
-        <a href="/dashboard" className="viewer-brand">← MAPLES <span>ACADEMY</span></a>
+      {/* ─── Top app bar ─────────────────────────────────────────────────── */}
+      <header className="viewer-bar">
+        <a href="/dashboard" className="btn-icon" aria-label="Back to dashboard" title="Back">
+          <ArrowLeft size={22} aria-hidden="true" />
+        </a>
 
-        {/* Title + status — FIX #11: constrained width, won't overflow into Present btn */}
-        <div className="document-title">
+        <div className="viewer-title">
           <strong title={documentName}>{documentName}</strong>
-          {status && !statusDismissed && (
-            <small className={`status-badge ${isErrorStatus ? "has-error" : ""}`}>
-              <span>{status}</span>
-              <button type="button" className="status-dismiss" onClick={() => setStatusDismissed(true)} title="Dismiss message" aria-label="Dismiss status message">✕</button>
-            </small>
+          {status && (
+            <span className={`viewer-status ${isErrorStatus ? "is-error" : ""}`} role="status" aria-live="polite">{status}</span>
           )}
         </div>
 
-        {/* File actions group */}
-        <div className="header-file-actions">
-          <button
-            type="button"
-            className="header-action-btn header-export-btn"
-            title="Export presentation as PDF"
-            onClick={async () => {
-              try {
-                const blob = await pdfExporter.export(source, annotations, pageOrder);
-                const link = document.createElement("a");
-                link.href = URL.createObjectURL(blob);
-                link.download = `${documentName.replace(/\s+/g, "_")}.pdf`;
-                link.click();
-              } catch (err) {
-                setStatus(err instanceof Error ? err.message : "Export failed");
-              }
-            }}
-          >
-            📥 Export PDF
-          </button>
-        </div>
-
-        {/* Undo / Redo in header for quick access */}
-        <div className="header-undo-redo">
-          <button type="button" title="Undo (Ctrl+Z)" disabled={!history.length}
+        <div className="viewer-bar-actions">
+          <button type="button" className="btn-icon" title="Undo" aria-label="Undo" disabled={!history.length}
             onClick={() => {
               if (history.length) {
                 const previous = history.at(-1)!;
@@ -1176,8 +1494,10 @@ export function ViewerClient() {
                 setHistory(c => c.slice(0, -1));
                 void saveCloud(previous).catch(err => setStatus(err instanceof Error ? err.message : "Cloud save failed"));
               }
-            }}>↶</button>
-          <button type="button" title="Redo (Ctrl+Y)" disabled={!future.length}
+            }}>
+            <ArrowUUpLeft size={22} aria-hidden="true" />
+          </button>
+          <button type="button" className="btn-icon" title="Redo" aria-label="Redo" disabled={!future.length}
             onClick={() => {
               if (future.length) {
                 const next = future[0];
@@ -1186,56 +1506,91 @@ export function ViewerClient() {
                 setFuture(c => c.slice(1));
                 void saveCloud(next).catch(err => setStatus(err instanceof Error ? err.message : "Cloud save failed"));
               }
-            }}>↷</button>
-        </div>
+            }}>
+            <ArrowUUpRight size={22} aria-hidden="true" />
+          </button>
 
-        {/* Present button group */}
-        <div className="header-present-actions">
-          <button type="button" className="present-btn" onClick={() => setPresenting(v => !v)}>
-            {presenting ? "⏹ Exit Present" : "▶ Present"}
+          <div className="menu-anchor">
+            <button type="button" className={`btn-icon ${moreOpen ? "is-active" : ""}`} aria-label="More options" aria-haspopup="menu" aria-expanded={moreOpen}
+              title="More" onClick={() => { setMoreOpen(v => !v); setActiveDropdown(null); setZoomMenuOpen(false); }}>
+              <DotsThree size={24} weight="bold" aria-hidden="true" />
+            </button>
+            {moreOpen && (
+              <div className="float-menu menu-top-right" role="menu" aria-label="More options">
+                <MenuItem icon={<Export size={20} aria-hidden="true" />} label="Export PDF" onClick={async () => {
+                  setMoreOpen(false);
+                  try {
+                    const blob = await pdfExporter.export(source, annotations, pageOrder);
+                    const link = document.createElement("a");
+                    link.href = URL.createObjectURL(blob);
+                    link.download = `${documentName.replace(/\s+/g, "_")}.pdf`;
+                    link.click();
+                  } catch (err) {
+                    setStatus(err instanceof Error ? err.message : "Export failed");
+                  }
+                }} />
+                <MenuItem icon={<Sliders size={20} aria-hidden="true" />} label="Settings" onClick={() => { setMoreOpen(false); setSettingsOpen(true); }} />
+                <MenuItem icon={isFullscreen ? <ArrowsIn size={20} aria-hidden="true" /> : <ArrowsOut size={20} aria-hidden="true" />} label={isFullscreen ? "Exit fullscreen" : "Fullscreen"} onClick={() => { toggleFullscreen(); setMoreOpen(false); }} />
+              </div>
+            )}
+          </div>
+
+          <button type="button" className={`btn ${presenting ? "btn-secondary" : "btn-primary"} viewer-present-btn`} onClick={() => setPresenting(v => !v)} aria-pressed={presenting}>
+            {presenting ? <Stop size={18} weight="fill" aria-hidden="true" /> : <Play size={18} weight="fill" aria-hidden="true" />}
+            <span>{presenting ? "Exit" : "Present"}</span>
           </button>
         </div>
       </header>
 
-      {/* ─── LOADING STATE — FIX #12 ─────────────────────────────────────── */}
       {isLoading && (
-        <div className="viewer-loading-overlay" aria-live="polite" aria-label="Loading document">
-          <div className="viewer-loading-spinner" />
+        <div className="viewer-loading" aria-live="polite">
+          <span className="viewer-spinner" aria-hidden="true" />
           <span>Loading document…</span>
         </div>
       )}
 
       {(pdf || pageOrder.length > 0) ? (
-        /* FIX #21 + #8: sidebar width unified, canvas fills properly */
-        <div className={`viewer-body ${sidebarOpen ? "" : "sidebar-collapsed"}`}>
+        <div className={`viewer-body ${sidebarOpen ? "" : "rail-collapsed"}`}>
 
-          {/* ─── SIDEBAR — FIX #5: collapsed state doesn't leak ──────────── */}
-          <aside className={`page-sidebar ${sidebarOpen ? "" : "sidebar-collapsed"}`} aria-label="Page thumbnails">
-            <button
-              className="sidebar-toggle"
-              aria-label={sidebarOpen ? "Collapse page thumbnails" : "Expand page thumbnails"}
-              onClick={() => setSidebarOpen(v => !v)}
-            >
-              {sidebarOpen ? "◀" : "▶"}
-            </button>
+          {/* ─── Page rail ──────────────────────────────────────────────── */}
+          <aside className={`page-rail ${sidebarOpen ? "" : "is-collapsed"}`} aria-label="Pages">
+            <div className="rail-head">
+              {sidebarOpen && <strong>Pages</strong>}
+              <button type="button" className="btn-icon rail-toggle" onClick={() => setSidebarOpen(v => !v)}
+                aria-label={sidebarOpen ? "Collapse page list" : "Expand page list"} aria-expanded={sidebarOpen}>
+                {sidebarOpen ? <CaretLeft size={20} aria-hidden="true" /> : <CaretRight size={20} aria-hidden="true" />}
+              </button>
+            </div>
 
             {sidebarOpen ? (
               <>
-                <strong>Pages</strong>
-                <div className="page-sidebar-actions">
-                  <button onClick={addBlankPage}>＋ Blank page</button>
-                  <button onClick={() => reorderPage(-1)} disabled={page === 1}>↑ Move</button>
-                  <button onClick={() => reorderPage(1)} disabled={page === pages}>↓ Move</button>
-                  <button onClick={() => deletePage()} disabled={pageOrder.length <= 1} className="delete-page-btn">🗑 Delete</button>
+                <div className="rail-actions">
+                  <button type="button" className="btn btn-secondary rail-add" onClick={addBlankPage}>
+                    <Plus size={18} aria-hidden="true" />
+                    <span>Blank page</span>
+                  </button>
+                  <div className="rail-icon-row">
+                    <button type="button" className="btn-icon" onClick={() => reorderPage(-1)} disabled={page === 1} aria-label="Move page up" title="Move up">
+                      <CaretUp size={20} aria-hidden="true" />
+                    </button>
+                    <button type="button" className="btn-icon" onClick={() => reorderPage(1)} disabled={page === pages} aria-label="Move page down" title="Move down">
+                      <CaretDown size={20} aria-hidden="true" />
+                    </button>
+                    <button type="button" className="btn-icon is-danger" onClick={() => deletePage()} disabled={pageOrder.length <= 1} aria-label="Delete page" title="Delete page">
+                      <Trash size={20} aria-hidden="true" />
+                    </button>
+                  </div>
                 </div>
-                {pageOrder.map((item, idx) => (
-                  <PageThumbnail key={item.id} pdf={pdf} sourcePage={item.sourcePage} pageNumber={idx + 1} background={item.background} active={page === idx + 1} onClick={() => setPage(idx + 1)} />
-                ))}
+                <div className="rail-list">
+                  {pageOrder.map((item, idx) => (
+                    <PageThumbnail key={item.id} pdf={pdf} sourcePage={item.sourcePage} pageNumber={idx + 1} background={item.background} active={page === idx + 1} onClick={() => setPage(idx + 1)} />
+                  ))}
+                </div>
               </>
             ) : (
-              <div className="collapsed-page-list">
+              <div className="rail-compact">
                 {pageOrder.map((item, idx) => (
-                  <button key={item.id} className={`page-num-pill ${page === idx + 1 ? "active" : ""}`} onClick={() => setPage(idx + 1)} title={`Go to page ${idx + 1}`}>
+                  <button key={item.id} type="button" className={`page-chip ${page === idx + 1 ? "is-active" : ""}`} onClick={() => setPage(idx + 1)} aria-label={`Go to page ${idx + 1}`} aria-current={page === idx + 1 ? "page" : undefined}>
                     {idx + 1}
                   </button>
                 ))}
@@ -1243,66 +1598,59 @@ export function ViewerClient() {
             )}
           </aside>
 
-          {/* ─── MAIN WORKSPACE ──────────────────────────────────────────── */}
+          {/* ─── Workspace ──────────────────────────────────────────────── */}
           <section className="viewer-workspace">
 
-            {/* FIX #15: zoom wrapper z-index above sidebar toggle */}
-            <div className="zoom-controls-wrapper">
-              <button className={`zoom-toggle-btn ${zoomMenuOpen ? "active" : ""}`} title="Display & Zoom Options" onClick={() => setZoomMenuOpen(v => !v)} aria-expanded={zoomMenuOpen} aria-haspopup="true">
-                <span>🔍 {Math.round(zoom * 100)}%</span>
-                <small>▾</small>
+            <div className="zoom-anchor menu-anchor">
+              <button type="button" className={`zoom-chip ${zoomMenuOpen ? "is-active" : ""}`} aria-haspopup="menu" aria-expanded={zoomMenuOpen}
+                aria-label={`Zoom ${Math.round(zoom * 100)} percent. Open zoom options`} onClick={() => { setZoomMenuOpen(v => !v); setActiveDropdown(null); setMoreOpen(false); }}>
+                <MagnifyingGlass size={18} aria-hidden="true" />
+                <span>{Math.round(zoom * 100)}%</span>
               </button>
               {zoomMenuOpen && (
-                <div className="zoom-popover-menu" role="menu">
-                  <div className="zoom-menu-row">
-                    <button title="Zoom Out" onClick={() => setZoom(z => Math.max(0.25, +(z - 0.15).toFixed(2)))}>–</button>
-                    <span className="zoom-val" onClick={() => { setZoom(1.0); setPan({ x: 0, y: 0 }); }}>{Math.round(zoom * 100)}%</span>
-                    <button title="Zoom In" onClick={() => setZoom(z => Math.min(4.0, +(z + 0.15).toFixed(2)))}>+</button>
+                <div className="float-menu zoom-menu" role="menu" aria-label="Zoom">
+                  <div className="zoom-stepper">
+                    <button type="button" className="btn-icon" aria-label="Zoom out" onClick={() => setZoomLevel(zoom - 0.25)}><MagnifyingGlassMinus size={20} aria-hidden="true" /></button>
+                    <span className="zoom-value" aria-live="polite">{Math.round(zoom * 100)}%</span>
+                    <button type="button" className="btn-icon" aria-label="Zoom in" onClick={() => setZoomLevel(zoom + 0.25)}><MagnifyingGlassPlus size={20} aria-hidden="true" /></button>
                   </div>
-                  <div className="zoom-menu-divider" />
-                  <button className="zoom-menu-item" role="menuitem" onClick={() => { setZoom(1.0); setPan({ x: 0, y: 0 }); setZoomMenuOpen(false); }}>⛶ Fit to Screen</button>
-                  <button className="zoom-menu-item" role="menuitem" onClick={() => { toggleFullscreen(); setZoomMenuOpen(false); }}>{isFullscreen ? "🗗 Exit Fullscreen" : "⛶ Fullscreen"}</button>
+                  <MenuItem icon={<ArrowsIn size={20} aria-hidden="true" />} label="Fit to screen" onClick={() => { resetView(); setZoomMenuOpen(false); }} />
                 </div>
               )}
             </div>
 
-            {/* Stage / Canvas area */}
+            {/* Stage: every pointer passes through the capture handlers first,
+                which decide whether it draws, pans, zooms, or is rejected. */}
             <div
               className="stage"
               ref={stage}
-              onPointerDown={e => {
-                if (tool === "pan" || e.button === 1) {
-                  setIsPanning(true);
-                  panStart.current = { x: e.clientX - pan.x, y: e.clientY - pan.y };
-                  e.currentTarget.setPointerCapture(e.pointerId);
-                }
-              }}
-              onDoubleClick={() => { setZoom(1.0); setPan({ x: 0, y: 0 }); }}
-              onPointerMove={e => { if (isPanning) setPan({ x: e.clientX - panStart.current.x, y: e.clientY - panStart.current.y }); }}
-              onPointerUp={() => setIsPanning(false)}
+              onPointerDownCapture={onStagePointerDown}
+              onPointerMoveCapture={onStagePointerMove}
+              onPointerUpCapture={onStagePointerEnd}
+              onPointerCancelCapture={onStagePointerEnd}
+              onContextMenu={e => e.preventDefault()}
               onWheel={e => {
                 if (e.ctrlKey || e.metaKey) {
                   e.preventDefault();
-                  setZoom(z => Math.max(0.25, Math.min(4.0, +(z + (e.deltaY > 0 ? -0.1 : 0.1)).toFixed(2))));
+                  setZoomLevel(zoomRef.current + (e.deltaY > 0 ? -0.1 : 0.1));
                 }
               }}
             >
               <div
                 className="page-frame"
+                ref={frame}
                 style={{
                   transform: zoom !== 1 || pan.x !== 0 || pan.y !== 0 ? `scale(${zoom}) translate(${pan.x / zoom}px, ${pan.y / zoom}px)` : undefined,
                   transformOrigin: "center center",
-                  transition: (isPanning || pinchRef.current) ? "none" : "transform 0.1s cubic-bezier(0,0,0.2,1)",
+                  transition: (isPanning || gesturing) ? "none" : "transform 0.12s cubic-bezier(0.2, 0, 0, 1)",
                 }}
               >
-                {/* smooth page fade transition wrapper */}
                 <div
                   ref={pageEl}
                   className={`page ${smoothTransition ? "page-smooth" : ""}`}
                   style={{ cursor: laserPointer ? "crosshair" : undefined }}
                 >
                   <canvas ref={canvas} />
-                  {/* Grid overlay — rendered before SVG so annotations sit on top */}
                   {gridType !== "none" && (
                     <svg
                       className={`grid-overlay grid-${gridType}`}
@@ -1339,95 +1687,19 @@ export function ViewerClient() {
                     style={{ touchAction: "none", userSelect: "none", WebkitUserSelect: "none" }}
                     onDragOver={e => e.preventDefault()}
                     onDrop={handleCanvasDrop}
-                    onPointerDown={e => {
-                      // FIX #14: only auto-hide dock for actual drawing tools
-                      setPropertiesOpen(false);
-                      setActiveDropdown(null);
-                      setZoomMenuOpen(false);
-                      if (autoHideDock && drawingTypes.includes(tool as AnnotationType)) {
-                        setDockCollapsed(true);
-                      }
-                      const pt = point(e);
-                      if (tool.includes("eraser")) {
-                        setIsErasing(true); setEraserPos(pt); eraseAtPoint(pt);
-                      } else if (tool !== "select" && tool !== "pan") {
-                        try { e.currentTarget.setPointerCapture(e.pointerId); } catch {}
-                        setDraft([pt]);
-                      } else if (tool === "select") {
-                        setSelectedId(undefined);
-                      }
-                    }}
-                    onPointerMove={e => {
-                      const pt = point(e);
-                      // Always track position for laser pointer
-                      if (laserPointer) setEraserPos(pt);
-                      if (tool.includes("eraser")) {
-                        setEraserPos(pt);
-                        if (isErasing || e.buttons === 1) eraseAtPoint(pt);
-                      } else if (transforming) {
-                        updateTransform(e);
-                      } else if (draft) {
-                        const nativeEvt = e.nativeEvent as unknown as { getCoalescedEvents?: () => PointerEvent[] };
-                        const coalesced = typeof nativeEvt.getCoalescedEvents === "function" && nativeEvt.getCoalescedEvents().length > 0
-                          ? nativeEvt.getCoalescedEvents() : [e];
-                        const rect = (pageEl.current ?? overlay.current!).getBoundingClientRect();
-                        const newPoints: Point[] = [];
-                        for (const cEvt of coalesced) {
-                          const p = normalizePoint({ x: cEvt.clientX - rect.left, y: cEvt.clientY - rect.top }, { width: rect.width, height: rect.height });
-                          newPoints.push(p);
-                        }
-                        setDraft(curr => {
-                          if (!curr) return newPoints;
-                          let updated = [...curr];
-                          for (const p of newPoints) {
-                            const last = updated.at(-1);
-                            if (!last || Math.hypot(p.x - last.x, p.y - last.y) >= 0.0006) updated.push(p);
-                          }
-                          return updated;
-                        });
-                      }
-                    }}
-                    onPointerUp={e => {
-                      if (tool.includes("eraser")) {
-                        setIsErasing(false); setEraserPos(null);
-                        const final = annotationsForErase.current;
-                        setHistory(h => [...h, annotations]); setFuture([]);
-                        void saveCloud(final).catch(err => setStatus(err instanceof Error ? err.message : "Cloud save failed"));
-                      }
-                      if (e.currentTarget.hasPointerCapture?.(e.pointerId)) {
-                        try { e.currentTarget.releasePointerCapture(e.pointerId); } catch {}
-                      }
-                      if (transforming) endTransform();
-                      finish(e);
-                    }}
-                    onPointerCancel={e => {
-                      if (tool.includes("eraser")) {
-                        setIsErasing(false); setEraserPos(null);
-                        const final = annotationsForErase.current;
-                        setHistory(h => [...h, annotations]); setFuture([]);
-                        void saveCloud(final).catch(err => setStatus(err instanceof Error ? err.message : "Cloud save failed"));
-                      }
-                      if (e.currentTarget.hasPointerCapture?.(e.pointerId)) {
-                        try { e.currentTarget.releasePointerCapture(e.pointerId); } catch {}
-                      }
-                      if (transforming) endTransform();
-                      finish(e);
-                    }}
-                    onPointerLeave={() => {
-                      if (isErasing) {
-                        const final = annotationsForErase.current;
-                        setHistory(h => [...h, annotations]); setFuture([]);
-                        void saveCloud(final).catch(err => setStatus(err instanceof Error ? err.message : "Cloud save failed"));
-                      }
-                      setEraserPos(null); setIsErasing(false);
-                    }}                  >
+                    onPointerDown={onOverlayPointerDown}
+                    onPointerMove={onOverlayPointerMove}
+                    onPointerUp={onOverlayPointerEnd}
+                    onPointerCancel={onOverlayPointerEnd}
+                    onPointerLeave={onOverlayPointerLeave}
+                  >
                     <defs>
                       <marker id="arrowhead" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto" markerUnits="strokeWidth">
                         <path d="M0,0 L0,6 L8,3 Z" fill="context-stroke" />
                       </marker>
                     </defs>
 
-                    {/* shapes — hidden when hideAnnotations is on */}
+                    {/* Shapes are hidden when hideAnnotations is on */}
                     {!hideAnnotations && visible.map(annotation => (
                       <AnnotationShape
                         key={annotation.id}
@@ -1435,8 +1707,7 @@ export function ViewerClient() {
                         selected={selectedId === annotation.id}
                         isDrawingTool={!["select", "pan"].includes(tool)}
                         onPointerDown={(e, a) => {
-                          if (tool.includes("eraser")) { setIsErasing(true); eraseAtPoint(point(e)); }
-                          else if (tool === "select") startTransform(e, "body", a);
+                          if (tool === "select") startTransform(e, "body", a);
                         }}
                       />
                     ))}
@@ -1445,10 +1716,6 @@ export function ViewerClient() {
                       <TransformBoundingBox annotation={selectedAnnotation} onStartTransform={startTransform} />
                     )}
 
-                    {/* Live draft preview ─────────────────────────────────
-                        Drawing tools → smooth live stroke.
-                        Shape/line/text tools → dotted ghost outline that
-                        exactly matches the shape that will be committed.  */}
                     {draft && draft.length >= 2 && (() => {
                       const isDrawing = drawingTypes.includes(tool as AnnotationType);
                       const isLine    = tool === "line" || tool === "arrow";
@@ -1532,7 +1799,7 @@ export function ViewerClient() {
                             strokeLinejoin="round"
                             opacity={0.7}
                           />
-                          {/* Corner size hint — shows W × H in small text */}
+                          {/* Corner size hint - shows W × H in small text */}
                           <text
                             x={gx + gw + 6}
                             y={gy - 6}
@@ -1552,7 +1819,7 @@ export function ViewerClient() {
                       <circle cx={eraserPos.x * 1000} cy={eraserPos.y * 1000} r={eraserSize} fill="rgba(239,68,68,0.18)" stroke="#ef4444" strokeWidth="2" strokeDasharray="4 3" pointerEvents="none" />
                     )}
 
-                    {/* Laser pointer dot — shown when laserPointer mode is on */}
+                    {/* Laser pointer dot - shown when laserPointer mode is on */}
                     {laserPointer && eraserPos && !tool.includes("eraser") && (
                       <g pointerEvents="none">
                         <circle cx={eraserPos.x * 1000} cy={eraserPos.y * 1000} r={12} fill="rgba(239,68,68,0.25)" />
@@ -1563,703 +1830,292 @@ export function ViewerClient() {
                   </svg>
                 </div>
               </div>
-
-              {/* FIX #9: page-counter lives OUTSIDE page-frame so it doesn't move with zoom/pan */}
-              <div
-                className={`page-counter ${showPageCounter ? "visible" : ""}`}
-                onMouseEnter={triggerPageCounter}
-                onTouchStart={triggerPageCounter}
-              >
-                <button aria-label="Previous page" disabled={page === 1} onClick={() => setPage(v => v - 1)}>‹</button>
-                <span>Page {page} / {pages}</span>
-                <button aria-label="Next page" disabled={page === pages} onClick={() => setPage(v => v + 1)}>›</button>
-              </div>
             </div>
 
-            {/* ─── BOTTOM FLOATING DOCK ────────────────────────────────────
-                floating-dock-wrapper owns both the pill (collapsed state) and
-                the full dock (expanded state). They swap — never overlap.
-                When dockPos is set the wrapper switches to fixed positioning
-                so the user can drag it anywhere on screen.               */}
-            <div
-              className={`floating-dock-wrapper ${dockPos ? "dock-free" : ""}`}
-              ref={dockRef}
-              style={dockPos ? { left: dockPos.x, top: dockPos.y, bottom: "auto", transform: "none" } : undefined}
-            >
+            {/* Page pill: bottom-right, separate from the centred dock */}
+            {!presenting && (
+              <div className="page-pill" role="group" aria-label="Page navigation">
+                <button type="button" className="btn-icon" aria-label="Previous page" disabled={page === 1} onClick={() => setPage(v => v - 1)}>
+                  <CaretLeft size={20} aria-hidden="true" />
+                </button>
+                <span className="page-pill-count" aria-live="polite">{page} / {pages}</span>
+                <button type="button" className="btn-icon" aria-label="Next page" disabled={page === pages} onClick={() => setPage(v => v + 1)}>
+                  <CaretRight size={20} aria-hidden="true" />
+                </button>
+              </div>
+            )}
 
-              {/* Trigger pill — shown when dock is collapsed */}
-              {dockCollapsed && (
-                <>
-                  <div
-                    className="dock-edge-target"
-                    onClick={() => setDockCollapsed(false)}
-                    onTouchStart={() => setDockCollapsed(false)}
-                    title="Tap to expand toolbar"
-                  />
-                  <button
-                    type="button"
-                    className="dock-trigger-pill"
-                    onClick={() => setDockCollapsed(false)}
-                    onTouchEnd={e => { e.preventDefault(); setDockCollapsed(false); }}
-                    title="Expand Drawing Toolbar"
-                    aria-label="Expand Drawing Toolbar"
-                  >
-                    <span>▲ Drawing Tools</span>
-                  </button>
-                </>
-              )}
-              {/* Properties popover — FIX #6: scroll indicator added via CSS */}
-              {propertiesOpen && (
-                <div className="properties-popover" role="toolbar" aria-label="Style options">
-                  {selectedAnnotation && (
-                    <>
-                      <button onClick={editSelected} disabled={selectedAnnotation.type !== "text"}>✏️ Edit text</button>
-                      <button onClick={duplicateSelected}>⧉ Duplicate</button>
-                      <button className="delete-action" onClick={() => { deleteAnnotation(selectedAnnotation.id); setSelectedId(undefined); setPropertiesOpen(false); }}>🗑 Delete</button>
-                    </>
-                  )}
+            {/* Presenting: a quiet control strip that stays out of the slide */}
+            {presenting && (
+              <div className={`present-bar${barAwake ? "" : " is-idle"}`} role="group" aria-label="Presentation controls">
+                <button type="button" className="btn-icon" aria-label="Previous page" disabled={page === 1} onClick={() => setPage(v => v - 1)}>
+                  <CaretLeft size={22} aria-hidden="true" />
+                </button>
+                <span className="page-pill-count" aria-live="polite">{page} / {pages}</span>
+                <button type="button" className="btn-icon" aria-label="Next page" disabled={page === pages} onClick={() => setPage(v => v + 1)}>
+                  <CaretRight size={22} aria-hidden="true" />
+                </button>
+                <button type="button" className="btn btn-secondary" onClick={() => setPresenting(false)}>
+                  <Stop size={18} weight="fill" aria-hidden="true" /> Exit
+                </button>
+              </div>
+            )}
 
-                  {tool.includes("eraser") && (
-                    <div className="eraser-options">
-                      <label>
-                        <span>Eraser Size ({eraserSize}px)</span>
-                        <div className="stroke-presets">
-                          {[8, 16, 30, 50, 80].map(sz => (
-                            <button key={sz} type="button" className={`stroke-btn ${eraserSize === sz ? "active" : ""}`} onClick={() => setEraserSize(sz)}>
-                              {sz === 8 ? "Fine" : sz === 16 ? "Small" : sz === 30 ? "Med" : sz === 50 ? "Large" : "XL"}
-                            </button>
-                          ))}
-                        </div>
-                        <input aria-label="Eraser size" type="range" min="5" max="100" value={eraserSize} onChange={e => setEraserSize(+e.target.value)} />
-                      </label>
-                      <div className="clear-options">
-                        <strong>Clear:</strong>
-                        <button type="button" onClick={clearDrawingsOnPage}>✏️ Ink</button>
-                        <button type="button" onClick={clearShapesOnPage}>📐 Shapes</button>
-                        <button type="button" className="delete-action" onClick={clearAllOnPage}>🗑️ Page</button>
-                      </div>
+            {/* ─── Style panel: contextual options above the dock ────────── */}
+            {showStylePanel && (
+              <div className="style-panel" role="region" aria-label="Tool options">
+                {hasSelectionPanel && selectedAnnotation && (
+                  <div className="style-group">
+                    <div className="style-head">
+                      <span className="style-kicker">Selected {selectedAnnotation.type.replace(/-/g, " ")}</span>
                     </div>
-                  )}
+                    <div className="style-actions">
+                      <button type="button" className="btn btn-secondary btn-sm" onClick={editSelected} disabled={selectedAnnotation.type !== "text"}>
+                        <PencilSimple size={18} aria-hidden="true" /> Edit text
+                      </button>
+                      <button type="button" className="btn btn-secondary btn-sm" onClick={duplicateSelected}>
+                        <Copy size={18} aria-hidden="true" /> Duplicate
+                      </button>
+                      <button type="button" className="btn btn-danger btn-sm" onClick={() => { deleteAnnotation(selectedAnnotation.id); setSelectedId(undefined); setPropertiesOpen(false); }}>
+                        <Trash size={18} aria-hidden="true" /> Delete
+                      </button>
+                    </div>
+                  </div>
+                )}
 
-                  {(tool === "text" || selectedAnnotation?.type === "text") && (
-                    <>
-                      <label>
-                        Font Family
-                        <select value={selectedAnnotation?.style.fontFamily ?? fontFamily} onChange={e => { const v = e.target.value; setFontFamily(v); if (selectedAnnotation) updateSelected({ style: { fontFamily: v } }); }}>
-                          {fontFamilies.map(f => <option key={f.val} value={f.val}>{f.label}</option>)}
-                        </select>
-                      </label>
-                      <label>
-                        Text Size ({selectedAnnotation?.style.fontSize ?? fontSize}px)
-                        <div className="stroke-presets">
-                          <button type="button" className="stroke-btn" onClick={() => { const curr = selectedAnnotation?.style.fontSize ?? fontSize; const next = Math.max(12, curr - 4); setFontSize(next); if (selectedAnnotation) updateSelected({ height: Math.max(selectedAnnotation.height, (next * 1.5) / 1000), style: { fontSize: next } }); }}>A–</button>
-                          <button type="button" className="stroke-btn" onClick={() => { const curr = selectedAnnotation?.style.fontSize ?? fontSize; const next = Math.min(160, curr + 6); setFontSize(next); if (selectedAnnotation) updateSelected({ height: Math.max(selectedAnnotation.height, (next * 1.5) / 1000), style: { fontSize: next } }); }}>A+</button>
-                          {fontSizePresets.map(fs => (
-                            <button key={fs} type="button" className={`stroke-btn ${(selectedAnnotation?.style.fontSize ?? fontSize) === fs ? "active" : ""}`} onClick={() => { setFontSize(fs); if (selectedAnnotation) updateSelected({ height: Math.max(selectedAnnotation.height, (fs * 1.5) / 1000), style: { fontSize: fs } }); }}>{fs}px</button>
-                          ))}
-                        </div>
-                        <input aria-label="Text size slider" type="range" min="12" max="160" step="2" value={selectedAnnotation?.style.fontSize ?? fontSize}
-                          onChange={e => { const v = +e.target.value; setFontSize(v); if (selectedAnnotation) updateSelected({ height: Math.max(selectedAnnotation.height, (v * 1.5) / 1000), style: { fontSize: v } }); }} />
-                      </label>
-                    </>
-                  )}
-
-                  <label>
-                    Stroke
-                    <div className="color-swatches">
-                      {strokeColors.map(c => (
-                        <button key={c} type="button" className={`color-swatch ${(selectedAnnotation?.style.color ?? color) === c ? "active" : ""}`}
-                          style={{ backgroundColor: c, border: c === "#ffffff" ? "1px solid #cbd5e1" : undefined }}
-                          data-hex={c} aria-label={`Stroke colour ${c}`} title={c}
-                          onClick={() => { setColor(c); if (selectedAnnotation) updateSelected({ style: { color: c } }); }} />
+                {tool.includes("eraser") && (
+                  <div className="style-group">
+                    <div className="style-head">
+                      <span className="style-kicker">Eraser size</span>
+                      <span className="style-value">{eraserSize}px</span>
+                    </div>
+                    <div className="segmented" role="radiogroup" aria-label="Eraser size">
+                      {[
+                        { sz: 8, label: "Fine" }, { sz: 16, label: "Small" }, { sz: 30, label: "Medium" }, { sz: 50, label: "Large" }, { sz: 80, label: "XL" },
+                      ].map(({ sz, label }) => (
+                        <button key={sz} type="button" role="radio" aria-checked={eraserSize === sz} className={`seg-btn ${eraserSize === sz ? "is-active" : ""}`} onClick={() => setEraserSize(sz)}>{label}</button>
                       ))}
                     </div>
-                    <input aria-label="Custom stroke colour" type="color" value={selectedAnnotation?.style.color ?? color}
-                      onChange={e => { setColor(e.target.value); if (selectedAnnotation) updateSelected({ style: { color: e.target.value } }); }} />
-                  </label>
+                    <input className="range" type="range" min="5" max="100" value={eraserSize} onChange={e => setEraserSize(+e.target.value)} aria-label="Eraser size slider" />
+                    <div className="style-actions">
+                      <button type="button" className="btn btn-secondary btn-sm" onClick={clearDrawingsOnPage}>Clear ink</button>
+                      <button type="button" className="btn btn-secondary btn-sm" onClick={clearShapesOnPage}>Clear shapes</button>
+                      <button type="button" className="btn btn-danger btn-sm" onClick={() => showConfirm("Clear every annotation on this page? This cannot be undone.", () => { clearAllOnPage(); setConfirmState(null); })}>Clear page</button>
+                    </div>
+                  </div>
+                )}
 
-                  <label>
-                    Thickness
-                    <div className="stroke-presets">
+                {(tool === "text" || selectedAnnotation?.type === "text") && (
+                  <div className="style-group">
+                    <label className="style-field">
+                      <span className="style-kicker">Font</span>
+                      <select className="select" value={selectedAnnotation?.style.fontFamily ?? fontFamily} onChange={e => { const v = e.target.value; setFontFamily(v); if (selectedAnnotation) updateSelected({ style: { fontFamily: v } }); }}>
+                        {fontFamilies.map(f => <option key={f.val} value={f.val}>{f.label}</option>)}
+                      </select>
+                    </label>
+                    <div className="style-head">
+                      <span className="style-kicker">Text size</span>
+                      <span className="style-value">{fontSizeValue}px</span>
+                    </div>
+                    <input className="range" type="range" min="12" max="160" step="2" value={fontSizeValue} aria-label="Text size"
+                      onChange={e => {
+                        const v = +e.target.value;
+                        setFontSize(v);
+                        if (selectedAnnotation) updateSelected({ height: Math.max(selectedAnnotation.height, (v * 1.5) / 1000), style: { fontSize: v } });
+                      }} />
+                  </div>
+                )}
+
+                <div className="style-group">
+                  <span className="style-kicker">Colour</span>
+                  <div className="swatch-row">
+                    {strokeColors.map(c => (
+                      <button key={c} type="button" className={`swatch ${strokeColor === c ? "is-active" : ""} ${c === "#ffffff" ? "is-light" : ""}`}
+                        style={{ backgroundColor: c }} aria-label={`Colour ${c}`} aria-pressed={strokeColor === c} title={c}
+                        onClick={() => { setColor(c); if (selectedAnnotation) updateSelected({ style: { color: c } }); }} />
+                    ))}
+                    <label className="swatch swatch-custom" title="Custom colour">
+                      <span className="sr-only">Custom colour</span>
+                      <input type="color" value={strokeColor} aria-label="Custom stroke colour"
+                        onChange={e => { setColor(e.target.value); if (selectedAnnotation) updateSelected({ style: { color: e.target.value } }); }} />
+                    </label>
+                  </div>
+                </div>
+
+                {!tool.includes("eraser") && tool !== "text" && (
+                  <div className="style-group">
+                    <div className="style-head">
+                      <span className="style-kicker">Thickness</span>
+                      <span className="style-value">{strokeWidthValue}px</span>
+                    </div>
+                    <div className="segmented" role="radiogroup" aria-label="Thickness presets">
                       {strokeWidthPresets.map(sp => (
-                        <button key={sp.val} type="button" className={`stroke-btn ${(selectedAnnotation?.style.strokeWidth ?? width) === sp.val ? "active" : ""}`}
+                        <button key={sp.val} type="button" role="radio" aria-checked={strokeWidthValue === sp.val} className={`seg-btn ${strokeWidthValue === sp.val ? "is-active" : ""}`}
                           onClick={() => { setWidth(sp.val); if (selectedAnnotation) updateSelected({ style: { strokeWidth: sp.val } }); }}>{sp.label}</button>
                       ))}
                     </div>
-                    <input aria-label="Stroke width" type="range" min="1" max="48" value={selectedAnnotation?.style.strokeWidth ?? width}
+                    <input className="range" type="range" min="1" max="48" value={strokeWidthValue} aria-label="Stroke width"
                       onChange={e => { const v = +e.target.value; setWidth(v); if (selectedAnnotation) updateSelected({ style: { strokeWidth: v } }); }} />
-                    <output>{selectedAnnotation?.style.strokeWidth ?? width}px</output>
-                  </label>
-
-                  <label>
-                    Opacity ({Math.round((selectedAnnotation?.style.opacity ?? opacity) * 100)}%)
-                    <input aria-label="Opacity" type="range" min="0.1" max="1" step="0.05" value={selectedAnnotation?.style.opacity ?? opacity}
+                    <div className="style-head">
+                      <span className="style-kicker">Opacity</span>
+                      <span className="style-value">{Math.round(opacityValue * 100)}%</span>
+                    </div>
+                    <input className="range" type="range" min="0.1" max="1" step="0.05" value={opacityValue} aria-label="Opacity"
                       onChange={e => { const v = +e.target.value; setOpacity(v); if (selectedAnnotation) updateSelected({ style: { opacity: v } }); }} />
-                  </label>
-
-                  <label>Scale
-                    <input aria-label="Scale selected object" type="range" min="25" max="200" value={size} onChange={e => resizeSelected(+e.target.value)} />
-                    <output>{size}%</output>
-                  </label>
-
-                  {currentPage && (
-                    <label>Background <input aria-label="Slide background colour" type="color" value={currentPage.background || "#1e293b"} onChange={e => changePageBackground(e.target.value)} /></label>
-                  )}
-                </div>
-              )}
-
-              {/* ─── FIX #22: Bottom dock split into Drawing group + Presentation group ─── */}
-              <div className={`control-dock ${dockCollapsed ? "collapsed" : ""}`}>
-
-                {/* Drag grip — lets the user reposition the toolbar anywhere */}
-                <div
-                  className="dock-grip"
-                  title="Drag to move toolbar · Double-click to snap back"
-                  aria-label="Drag toolbar"
-                  onPointerDown={e => {
-                    e.preventDefault();
-                    e.currentTarget.setPointerCapture(e.pointerId);
-                    const dock = dockRef.current;
-                    const rect = dock?.getBoundingClientRect();
-                    dockDragRef.current = {
-                      startX: e.clientX,
-                      startY: e.clientY,
-                      originX: rect?.left ?? e.clientX - 200,
-                      originY: rect?.top ?? e.clientY - 32,
-                      dragging: true,
-                    };
-                  }}
-                  onDoubleClick={() => {
-                    // Double-click grip → snap back to default bottom-centre
-                    setDockPos(null);
-                    if (dockDragRef.current) dockDragRef.current.dragging = false;
-                  }}
-                >
-                  <span />
-                  <span />
-                  <span />
-                  <span />
-                  <span />
-                  <span />
-                </div>
-
-                {/* GROUP A: Drawing tools */}
-                <div className="tool-group drawing-tools-group">
-
-                  {/* Select */}
-                  <button type="button" className={tool === "select" ? "tool-active" : ""} title="Select & Edit" onClick={() => { setTool("select"); setActiveDropdown(null); setPropertiesOpen(!!selectedAnnotation); }}>
-                    <span>↖</span><small>Select</small>
-                  </button>
-
-                  {/* Pan */}
-                  <button type="button" className={tool === "pan" ? "tool-active" : ""} title="Pan Canvas" onClick={() => { setTool("pan"); setActiveDropdown(null); setPropertiesOpen(false); }}>
-                    <span>✋</span><small>Pan</small>
-                  </button>
-
-                  <span className="dock-divider" />
-
-                  {/* Pen group — FIX #10: dropdown uses tool-dropdown-container for outside-click handling */}
-                  <div className="tool-dropdown-container" style={{ position: "relative" }}>
-                    <button type="button" className={drawingTypes.includes(tool as AnnotationType) ? "tool-active" : ""} title="Pencil & Brushes"
-                      aria-expanded={activeDropdown === "pen"} aria-haspopup="true"
-                      onClick={() => { if (!drawingTypes.includes(tool as AnnotationType)) { setTool("ink"); setOpacity(1.0); if (width > 8) setWidth(3); } setActiveDropdown(activeDropdown === "pen" ? null : "pen"); setPropertiesOpen(true); }}>
-                      <span>{tool === "calligraphy" ? "✒️" : tool === "highlighter" ? "▰" : "✎"}</span>
-                      <small>{tool === "calligraphy" ? "Calli" : tool === "highlighter" ? "Hi-lite" : "Pen"} ▾</small>
-                    </button>
-                    {activeDropdown === "pen" && (
-                      <div className="tool-dropdown-menu" style={{ gridTemplateColumns: "repeat(3,1fr)" }} role="menu" onClick={e => e.stopPropagation()}>
-                        <button role="menuitem" className={tool === "ink" ? "active" : ""} onClick={() => { setTool("ink"); setOpacity(1.0); if (width > 8) setWidth(3); setActiveDropdown(null); setPropertiesOpen(true); }}>✎ Pen</button>
-                        <button role="menuitem" className={tool === "calligraphy" ? "active" : ""} onClick={() => { setTool("calligraphy"); setOpacity(1.0); if (width > 8) setWidth(3); setActiveDropdown(null); setPropertiesOpen(true); }}>✒️ Calli</button>
-                        <button role="menuitem" className={tool === "highlighter" ? "active" : ""} onClick={() => { setTool("highlighter"); setOpacity(0.45); if (width < 8) setWidth(14); setActiveDropdown(null); setPropertiesOpen(true); }}>▰ Highlight</button>
-                      </div>
-                    )}
                   </div>
+                )}
 
-                  {/* Eraser group */}
-                  <div className="tool-dropdown-container" style={{ position: "relative" }}>
-                    <button type="button" className={tool.includes("eraser") ? "tool-active" : ""} title="Eraser Tools"
-                      aria-expanded={activeDropdown === "eraser"} aria-haspopup="true"
-                      onClick={() => { if (!tool.includes("eraser")) setTool("partial-eraser"); setActiveDropdown(activeDropdown === "eraser" ? null : "eraser"); setPropertiesOpen(true); }}>
-                      <span>{tool === "stroke-eraser" ? "⌫" : "🧹"}</span>
-                      <small>Erase ▾</small>
-                    </button>
-                    {activeDropdown === "eraser" && (
-                      <div className="tool-dropdown-menu" style={{ gridTemplateColumns: "repeat(2,1fr)" }} role="menu" onClick={e => e.stopPropagation()}>
-                        <button role="menuitem" className={tool === "partial-eraser" ? "active" : ""} onClick={() => { setTool("partial-eraser"); setActiveDropdown(null); setPropertiesOpen(true); }}>🧹 Pixel</button>
-                        <button role="menuitem" className={tool === "stroke-eraser" ? "active" : ""} onClick={() => { setTool("stroke-eraser"); setActiveDropdown(null); setPropertiesOpen(true); }}>⌫ Object</button>
-                      </div>
-                    )}
+                {selectedAnnotation && (
+                  <div className="style-group">
+                    <div className="style-head">
+                      <span className="style-kicker">Scale</span>
+                      <span className="style-value">{size}%</span>
+                    </div>
+                    <input className="range" type="range" min="25" max="200" value={size} aria-label="Scale selected object" onChange={e => resizeSelected(+e.target.value)} />
                   </div>
+                )}
 
-                  {/* Shapes — opens the floating shapes panel */}
+                {currentPage && (
+                  <div className="style-group style-row">
+                    <span className="style-kicker">Page background</span>
+                    <label className="swatch swatch-custom" title="Page background">
+                      <span className="sr-only">Page background colour</span>
+                      <input type="color" value={currentPage.background || "#1e293b"} aria-label="Slide background colour" onChange={e => changePageBackground(e.target.value)} />
+                    </label>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ─── Dropdowns anchored above their dock buttons ────────────── */}
+
+            {/* ─── Floating dock ──────────────────────────────────────────── */}
+            <div
+              className={`dock-wrap ${dockPos ? "is-free" : ""}`}
+              ref={dockRef}
+              style={dockPos ? { left: dockPos.x, top: dockPos.y, bottom: "auto", transform: "none" } : undefined}
+            >
+              {dockCollapsed ? (
+                <button type="button" className="dock-pill" onClick={() => setDockCollapsed(false)} aria-label="Show drawing tools">
+                  <CaretUp size={18} aria-hidden="true" />
+                  <span>Tools</span>
+                </button>
+              ) : (
+                <div className="dock" role="toolbar" aria-label="Drawing tools">
                   <button
                     type="button"
-                    className={["rectangle","ellipse","triangle","diamond","star","cloud","pentagon","hexagon","octagon","heart","cross","parallelogram","right-triangle","cylinder","graph","line","arrow"].includes(tool) ? "tool-active" : ""}
-                    title="Shapes & Graph panel"
-                    onClick={() => setShapesPanelOpen(v => !v)}
+                    className="dock-grip"
+                    aria-label="Drag to move toolbar. Double tap to reset."
+                    title="Drag to move. Double tap to reset."
+                    onPointerDown={e => {
+                      e.preventDefault();
+                      e.currentTarget.setPointerCapture(e.pointerId);
+                      const rect = dockRef.current?.getBoundingClientRect();
+                      dockDragRef.current = {
+                        startX: e.clientX,
+                        startY: e.clientY,
+                        originX: rect?.left ?? e.clientX - 200,
+                        originY: rect?.top ?? e.clientY - 32,
+                        dragging: true,
+                      };
+                    }}
+                    onDoubleClick={resetDockPosition}
                   >
-                    <span>{tool==="ellipse"?"○":tool==="triangle"?"△":tool==="diamond"?"◇":tool==="star"?"☆":tool==="cloud"?"☁":tool==="graph"?"📈":tool==="pentagon"?"⬠":tool==="hexagon"?"⬡":tool==="octagon"?"⯃":tool==="heart"?"♡":tool==="cross"?"✚":tool==="parallelogram"?"▱":tool==="right-triangle"?"◺":tool==="cylinder"?"⌻":tool==="line"?"／":tool==="arrow"?"➜":"□"}</span>
-                    <small>Shapes ▾</small>
+                    <span /><span />
                   </button>
 
-                  {/* Text */}
-                  <button type="button" className={tool === "text" ? "tool-active" : ""} title="Insert Text" onClick={() => { setTool("text"); setActiveDropdown(null); setPropertiesOpen(true); }}>
-                    <span>T</span><small>Text</small>
-                  </button>
+                  <div className="dock-scroll">
+                    <DockButton icon={<Cursor size={22} aria-hidden="true" />} label="Select" active={tool === "select"}
+                      onClick={() => { setTool("select"); setActiveDropdown(null); setPropertiesOpen(!!selectedAnnotation); }} />
+                    <DockButton icon={<HandGrabbing size={22} aria-hidden="true" />} label="Pan" active={tool === "pan"}
+                      onClick={() => { setTool("pan"); setActiveDropdown(null); setPropertiesOpen(false); }} />
 
-                  {/* FIX #2: Image button now sets tool AND triggers file input */}
-                  <button type="button" className={tool === "image" ? "tool-active" : ""} title="Insert Image"
-                    onClick={() => { setTool("image"); setActiveDropdown(null); imageInputRef.current?.click(); }}>
-                    <span>🖼</span><small>Image</small>
-                  </button>
-                </div>
+                    <span className="dock-divider" aria-hidden="true" />
 
-                <span className="dock-divider dock-group-divider" />
+                    <div className="dock-anchor">
+                      <DockButton icon={penIcon} label={penLabel} active={drawingTypes.includes(tool as AnnotationType)} expanded={activeDropdown === "pen"}
+                        onClick={() => {
+                          if (!drawingTypes.includes(tool as AnnotationType)) { setTool("ink"); setOpacity(1.0); if (width > 8) setWidth(3); }
+                          setActiveDropdown(activeDropdown === "pen" ? null : "pen");
+                          setPropertiesOpen(true);
+                        }} />
+                      {activeDropdown === "pen" && (
+                        <div className="float-menu dock-menu" role="menu" aria-label="Pen types">
+                          <MenuItem icon={<PencilSimple size={20} aria-hidden="true" />} label="Pen" active={tool === "ink"} onClick={() => { setTool("ink"); setOpacity(1.0); if (width > 8) setWidth(3); setActiveDropdown(null); setPropertiesOpen(true); }} />
+                          <MenuItem icon={<PenNib size={20} aria-hidden="true" />} label="Brush" active={tool === "calligraphy"} onClick={() => { setTool("calligraphy"); setOpacity(1.0); if (width > 8) setWidth(3); setActiveDropdown(null); setPropertiesOpen(true); }} />
+                          <MenuItem icon={<Highlighter size={20} aria-hidden="true" />} label="Highlighter" active={tool === "highlighter"} onClick={() => { setTool("highlighter"); setOpacity(0.45); if (width < 8) setWidth(14); setActiveDropdown(null); setPropertiesOpen(true); }} />
+                        </div>
+                      )}
+                    </div>
 
-                {/* GROUP B: Presentation / navigation tools */}
-                <div className="tool-group presentation-tools-group">
-                  {/* Page navigation */}
-                  <div className="dock-pagination">
-                    <button type="button" title="Previous Slide" disabled={page === 1} onClick={() => setPage(v => v - 1)}>‹</button>
-                    <span>{page} / {pages}</span>
-                    <button type="button" title="Next Slide" disabled={page === pages} onClick={() => setPage(v => v + 1)}>›</button>
+                    <div className="dock-anchor">
+                      <DockButton icon={<Eraser size={22} aria-hidden="true" />} label="Erase" active={tool.includes("eraser")} expanded={activeDropdown === "eraser"}
+                        onClick={() => {
+                          if (!tool.includes("eraser")) setTool("partial-eraser");
+                          setActiveDropdown(activeDropdown === "eraser" ? null : "eraser");
+                          setPropertiesOpen(true);
+                        }} />
+                      {activeDropdown === "eraser" && (
+                        <div className="float-menu dock-menu" role="menu" aria-label="Eraser types">
+                          <MenuItem icon={<Eraser size={20} aria-hidden="true" />} label="Pixel" active={tool === "partial-eraser"} onClick={() => { setTool("partial-eraser"); setActiveDropdown(null); setPropertiesOpen(true); }} />
+                          <MenuItem icon={<Scissors size={20} aria-hidden="true" />} label="Whole stroke" active={tool === "stroke-eraser"} onClick={() => { setTool("stroke-eraser"); setActiveDropdown(null); setPropertiesOpen(true); }} />
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="dock-anchor">
+                      <DockButton icon={<Shapes size={22} aria-hidden="true" />} label="Shapes" active={shapeToolActive} expanded={shapesPanelOpen}
+                        onClick={() => setShapesPanelOpen(v => !v)} />
+                    </div>
+
+                    <DockButton icon={<TextT size={22} aria-hidden="true" />} label="Text" active={tool === "text"}
+                      onClick={() => { setTool("text"); setActiveDropdown(null); setPropertiesOpen(true); }} />
+
+                    <DockButton icon={<ImageIcon size={22} aria-hidden="true" />} label="Image" active={tool === "image"}
+                      onClick={() => { setTool("image"); setActiveDropdown(null); imageInputRef.current?.click(); }} />
+
+                    <span className="dock-divider" aria-hidden="true" />
+
+                    <DockButton icon={<CaretDoubleDown size={22} aria-hidden="true" />} label="Hide" title="Hide drawing tools"
+                      onClick={() => { setDockCollapsed(true); setActiveDropdown(null); setPropertiesOpen(false); }} />
                   </div>
-
-                  <span className="dock-divider" />
-
-                  {/* Settings */}
-                  <button type="button" title="Canvas Settings" onClick={() => setSettingsOpen(true)}>
-                    <span>⚙️</span><small>Settings</small>
-                  </button>
-
-                  {/* Collapse dock */}
-<button type="button" title="Hide drawing tools" aria-label="Hide drawing tools" aria-pressed={dockCollapsed} onClick={() => { setDockCollapsed(true); setActiveDropdown(null); setPropertiesOpen(false); }} style={{ opacity: 0.7 }}>
-                      <span>▼</span><small>Hide</small>
-                    </button>
                 </div>
-              </div>
+              )}
             </div>
           </section>
         </div>
       ) : (
         <section className="viewer-empty">
-          <div>
-            <span className="empty-icon">＋</span>
-            <h1>Open a lesson or start a 16:9 presentation</h1>
-            <p>Teach, draw, and present in real time with interactive smartboard tools.</p>
-            <div style={{ display: "flex", gap: "0.75rem", justifyContent: "center", marginTop: "1rem" }}>
-              <button type="button" className="primary" onClick={() => initBlankDocument("New 16:9 Presentation")}>Start 16:9 Presentation</button>
-              <label className="secondary upload">Choose a PDF<input type="file" hidden accept=".pdf,application/pdf" onChange={e => e.target.files?.[0] && open(e.target.files[0]).catch(err => setStatus(err.message))} /></label>
+          <div className="empty-state">
+            <span className="icon-badge icon-badge-lg" aria-hidden="true"><Presentation size={26} /></span>
+            <h1>Open a lesson or start a presentation</h1>
+            <p>Draw, annotate, and present PDFs and slides. Your work saves to your account when you are signed in.</p>
+            <div className="viewer-empty-actions">
+              <button type="button" className="btn btn-primary" onClick={() => initBlankDocument("New 16:9 Presentation")}>
+                <Plus size={18} aria-hidden="true" /> Start 16:9 presentation
+              </button>
+              <label className="btn btn-secondary">
+                <FilePdf size={18} aria-hidden="true" /> Choose a PDF
+                <input type="file" hidden accept=".pdf,application/pdf" onChange={e => e.target.files?.[0] && open(e.target.files[0]).catch(err => setStatus(err.message))} />
+              </label>
             </div>
           </div>
         </section>
       )}
 
-      {/* ─── FIX #18: Text dialog with proper role + aria-modal ─────────────── */}
-      {textPoints && (
-        <div className="text-dialog-backdrop" role="presentation" onClick={e => { if (e.target === e.currentTarget) setTextPoints(null); }}>
-          <form
-            className="text-dialog"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="text-dialog-title"
-            onSubmit={e => { e.preventDefault(); submitText(); }}
-          >
-            <h2 id="text-dialog-title">Add text annotation</h2>
-            <label>
-              Text
-              <input autoFocus value={textValue} onChange={e => setTextValue(e.target.value)} placeholder="Type text here…" />
-            </label>
-            <label>
-              Font Family
-              <select value={fontFamily} onChange={e => setFontFamily(e.target.value)}>
-                {fontFamilies.map(f => <option key={f.val} value={f.val}>{f.label}</option>)}
-              </select>
-            </label>
-            <label>
-              Font Size ({fontSize}px)
-              <div className="stroke-presets">
-                {fontSizePresets.map(fs => (
-                  <button key={fs} type="button" className={`stroke-btn ${fontSize === fs ? "active" : ""}`} onClick={() => setFontSize(fs)}>{fs}px</button>
-                ))}
-              </div>
-            </label>
-            <div>
-              <button type="button" className="secondary" onClick={() => setTextPoints(null)}>Cancel</button>
-              <button className="primary" type="submit" disabled={!textValue.trim()}>Add text</button>
-            </div>
-          </form>
-        </div>
-      )}
-
-      {/* ─── Settings modal ─────────────────────────────────────────────────── */}
-      {settingsOpen && (
-        <div className="settings-modal-backdrop" onClick={() => setSettingsOpen(false)} role="presentation">
-          <div className="settings-modal-card" role="dialog" aria-modal="true" aria-labelledby="settings-title" onClick={e => e.stopPropagation()}>
-
-            {/* Header */}
-            <div className="settings-modal-header">
-              <h3 id="settings-title">⚙️ Settings</h3>
-              <button type="button" className="sm-close-btn" onClick={() => setSettingsOpen(false)} aria-label="Close settings">✕</button>
-            </div>
-
-            {/* Tab strip */}
-            <div className="settings-tabs" role="tablist">
-              {(["canvas", "tools", "document", "view"] as const).map(tab => (
-                <button
-                  key={tab}
-                  role="tab"
-                  aria-selected={settingsTab === tab}
-                  className={`settings-tab-btn ${settingsTab === tab ? "active" : ""}`}
-                  onClick={() => setSettingsTab(tab)}
-                >
-                  {tab === "canvas" && "🎨 Canvas"}
-                  {tab === "tools" && "🖊️ Tools"}
-                  {tab === "document" && "📄 Document"}
-                  {tab === "view" && "👁️ View"}
-                </button>
-              ))}
-            </div>
-
-            {/* Body */}
-            <div className="settings-modal-body">
-
-              {/* ── TAB: Canvas ── */}
-              {settingsTab === "canvas" && (
-                <>
-                  {/* Slide background */}
-                  <div className="settings-section">
-                    <h4>Slide Background</h4>
-                    <div className="sm-bg-presets">
-                      {[
-                        { label: "Dark Slate",  color: "#1e293b" },
-                        { label: "White",        color: "#ffffff" },
-                        { label: "Deep Blue",    color: "#1e3a8a" },
-                        { label: "Board Green",  color: "#14532d" },
-                        { label: "Midnight",     color: "#0f172a" },
-                        { label: "Warm Cream",   color: "#fdf6e3" },
-                        { label: "Soft Gray",    color: "#f1f5f9" },
-                        { label: "Deep Purple",  color: "#3b0764" },
-                      ].map(bg => (
-                        <button
-                          key={bg.color}
-                          type="button"
-                          className={`sm-bg-swatch ${currentPage?.background === bg.color ? "active" : ""}`}
-                          style={{ background: bg.color }}
-                          onClick={() => changePageBackground(bg.color)}
-                          title={bg.label}
-                          aria-label={bg.label}
-                        />
-                      ))}
-                    </div>
-                    <div className="sm-row" style={{ marginTop: "0.5rem" }}>
-                      <span className="sm-label">Custom colour</span>
-                      <input
-                        type="color"
-                        className="sm-color-input"
-                        value={currentPage?.background || "#1e293b"}
-                        onChange={e => changePageBackground(e.target.value)}
-                        aria-label="Custom slide background colour"
-                      />
-                    </div>
-                  </div>
-
-                  {/* Grid overlay */}
-                  <div className="settings-section">
-                    <h4>Grid Overlay</h4>
-                    <div className="sm-chip-row">
-                      {(["none", "dots", "lines"] as const).map(g => (
-                        <button
-                          key={g}
-                          type="button"
-                          className={`sm-chip ${gridType === g ? "active" : ""}`}
-                          onClick={() => setGridType(g)}
-                        >
-                          {g === "none" ? "Off" : g === "dots" ? "⠿ Dots" : "⊞ Lines"}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Clear actions */}
-                  <div className="settings-section">
-                    <h4>Clear This Page</h4>
-                    <div className="sm-btn-row">
-                      <button type="button" className="sm-btn" onClick={() => { clearDrawingsOnPage(); setSettingsOpen(false); }}>✏️ Clear Ink</button>
-                      <button type="button" className="sm-btn" onClick={() => { clearShapesOnPage(); setSettingsOpen(false); }}>📐 Clear Shapes</button>
-                      <button type="button" className="sm-btn sm-btn-danger" onClick={() => { clearAllOnPage(); setSettingsOpen(false); }}>🗑️ Clear All</button>
-                    </div>
-                  </div>
-                </>
-              )}
-
-              {/* ── TAB: Tools ── */}
-              {settingsTab === "tools" && (
-                <>
-                  {/* Default pen colour */}
-                  <div className="settings-section">
-                    <h4>Default Pen Colour</h4>
-                    <div className="sm-row">
-                      <div className="sm-swatch-row">
-                        {["#000000","#ffffff","#2563eb","#dc2626","#16a34a","#ca8a04","#7c3aed","#db2777"].map(c => (
-                          <button
-                            key={c}
-                            type="button"
-                            className={`sm-color-swatch ${color === c ? "active" : ""}`}
-                            style={{ background: c, border: c === "#ffffff" ? "1px solid #d1d5db" : "none" }}
-                            onClick={() => setColor(c)}
-                            aria-label={`Set pen colour ${c}`}
-                          />
-                        ))}
-                      </div>
-                      <input type="color" className="sm-color-input" value={color} onChange={e => setColor(e.target.value)} aria-label="Custom pen colour" />
-                    </div>
-                  </div>
-
-                  {/* Default stroke width */}
-                  <div className="settings-section">
-                    <h4>Default Stroke Width</h4>
-                    <div className="sm-row" style={{ gap: "1rem" }}>
-                      <div className="sm-chip-row">
-                        {[2, 4, 6, 10, 16].map(w => (
-                          <button key={w} type="button" className={`sm-chip ${width === w ? "active" : ""}`} onClick={() => setWidth(w)}>{w}px</button>
-                        ))}
-                      </div>
-                      <input
-                        type="range" min="1" max="48" value={width}
-                        onChange={e => setWidth(+e.target.value)}
-                        style={{ flex: 1, accentColor: "var(--blue)" }}
-                        aria-label="Stroke width"
-                      />
-                      <span className="sm-value-badge">{width}px</span>
-                    </div>
-                  </div>
-
-                  {/* Default opacity */}
-                  <div className="settings-section">
-                    <h4>Default Opacity</h4>
-                    <div className="sm-row" style={{ gap: "1rem" }}>
-                      <input
-                        type="range" min="0.1" max="1" step="0.05" value={opacity}
-                        onChange={e => setOpacity(+e.target.value)}
-                        style={{ flex: 1, accentColor: "var(--blue)" }}
-                        aria-label="Default opacity"
-                      />
-                      <span className="sm-value-badge">{Math.round(opacity * 100)}%</span>
-                    </div>
-                  </div>
-
-                  {/* Toolbar behaviour */}
-                  <div className="settings-section">
-                    <h4>Toolbar Behaviour</h4>
-                    <div className="sm-toggle-row">
-                      <div className="sm-toggle-label">
-                        <strong>Auto-Hide on Drawing</strong>
-                        <small>Collapses toolbar when using pen / ink tools</small>
-                      </div>
-                      <button type="button" className={`sm-toggle-btn ${autoHideDock ? "on" : ""}`} onClick={() => setAutoHideDock(v => !v)}>
-                        <span className="sm-toggle-thumb" />
-                      </button>
-                    </div>
-                    <div className="sm-toggle-row">
-                      <div className="sm-toggle-label">
-                        <strong>Show Page Sidebar</strong>
-                        <small>Thumbnails panel on the left edge</small>
-                      </div>
-                      <button type="button" className={`sm-toggle-btn ${sidebarOpen ? "on" : ""}`} onClick={() => setSidebarOpen(v => !v)}>
-                        <span className="sm-toggle-thumb" />
-                      </button>
-                    </div>
-                  </div>
-                </>
-              )}
-
-              {/* ── TAB: Document ── */}
-              {settingsTab === "document" && (
-                <>
-                  {/* Rename */}
-                  <div className="settings-section">
-                    <h4>Presentation Name</h4>
-                    {renamingDoc ? (
-                      <div className="sm-row" style={{ gap: "0.5rem" }}>
-                        <input
-                          className="sm-text-input"
-                          value={renameValue}
-                          autoFocus
-                          maxLength={80}
-                          onChange={e => setRenameValue(e.target.value)}
-                          onKeyDown={e => {
-                            if (e.key === "Enter" && renameValue.trim()) { setDocumentName(renameValue.trim()); setRenamingDoc(false); }
-                            if (e.key === "Escape") setRenamingDoc(false);
-                          }}
-                          aria-label="Rename presentation"
-                        />
-                        <button type="button" className="sm-btn sm-btn-primary" onClick={() => { if (renameValue.trim()) { setDocumentName(renameValue.trim()); setRenamingDoc(false); } }}>Save</button>
-                        <button type="button" className="sm-btn" onClick={() => setRenamingDoc(false)}>Cancel</button>
-                      </div>
-                    ) : (
-                      <div className="sm-row" style={{ gap: "0.75rem" }}>
-                        <span className="sm-doc-name">{documentName}</span>
-                        <button type="button" className="sm-btn" onClick={() => { setRenameValue(documentName); setRenamingDoc(true); }}>✏️ Rename</button>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Stats */}
-                  <div className="settings-section">
-                    <h4>Document Info</h4>
-                    <div className="sm-info-grid">
-                      <div className="sm-info-item"><span className="sm-info-val">{pages}</span><span className="sm-info-lbl">Pages</span></div>
-                      <div className="sm-info-item"><span className="sm-info-val">{annotations.filter(a => drawingTypes.includes(a.type as AnnotationType)).length}</span><span className="sm-info-lbl">Ink strokes</span></div>
-                      <div className="sm-info-item"><span className="sm-info-val">{annotations.filter(a => !drawingTypes.includes(a.type as AnnotationType)).length}</span><span className="sm-info-lbl">Shapes / Text</span></div>
-                      <div className="sm-info-item"><span className="sm-info-val">{annotations.length}</span><span className="sm-info-lbl">Total annotations</span></div>
-                    </div>
-                  </div>
-
-                  {/* Export */}
-                  <div className="settings-section">
-                    <h4>Export</h4>
-                    <div className="sm-btn-row">
-                      <button
-                        type="button"
-                        className="sm-btn sm-btn-primary"
-                        onClick={async () => {
-                          const blob = await pdfExporter.export(source, annotations, pageOrder);
-                          const link = document.createElement("a");
-                          link.href = URL.createObjectURL(blob);
-                          link.download = `${documentName.replace(/\s+/g, "_")}.pdf`;
-                          link.click();
-                          setSettingsOpen(false);
-                        }}
-                      >📥 Export as PDF</button>
-                    </div>
-                  </div>
-
-                  {/* Danger zone */}
-                  <div className="settings-section settings-danger-zone">
-                    <h4>⚠️ Danger Zone</h4>
-                    <div className="sm-btn-row">
-                      <button type="button" className="sm-btn sm-btn-danger" onClick={() => {
-                        showConfirm("Clear ALL annotations on ALL pages? This cannot be undone.", () => {
-                          const next: Annotation[] = [];
-                          commit(next);
-                          setConfirmState(null);
-                          setSettingsOpen(false);
-                        });
-                      }}>🗑️ Clear Entire Presentation</button>
-                    </div>
-                  </div>
-                </>
-              )}
-
-              {/* ── TAB: View ── */}
-              {settingsTab === "view" && (
-                <>
-                  {/* Zoom controls */}
-                  <div className="settings-section">
-                    <h4>Zoom & Display</h4>
-                    <div className="sm-row" style={{ gap: "1rem", flexWrap: "wrap" }}>
-                      <button type="button" className="sm-btn" onClick={() => { setZoom(1.0); setPan({ x: 0, y: 0 }); }}>⛶ Reset Zoom (100%)</button>
-                      <button type="button" className="sm-btn" onClick={() => setZoom(z => Math.min(4.0, +(z + 0.25).toFixed(2)))}>🔍 Zoom In</button>
-                      <button type="button" className="sm-btn" onClick={() => setZoom(z => Math.max(0.25, +(z - 0.25).toFixed(2)))}>🔍 Zoom Out</button>
-                    </div>
-                    <div className="sm-row" style={{ gap: "1rem", marginTop: "0.5rem" }}>
-                      <span className="sm-label">Current zoom</span>
-                      <span className="sm-value-badge">{Math.round(zoom * 100)}%</span>
-                    </div>
-                  </div>
-
-                  {/* Fullscreen */}
-                  <div className="settings-section">
-                    <h4>Fullscreen</h4>
-                    <div className="sm-btn-row">
-                      <button type="button" className="sm-btn" onClick={() => { toggleFullscreen(); setSettingsOpen(false); }}>
-                        {isFullscreen ? "🗗 Exit Fullscreen" : "⛶ Enter Fullscreen"}
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Visibility toggles */}
-                  <div className="settings-section">
-                    <h4>Visibility</h4>
-                    <div className="sm-toggle-row">
-                      <div className="sm-toggle-label">
-                        <strong>Hide All Annotations</strong>
-                        <small>Temporarily hide ink & shapes — slides only</small>
-                      </div>
-                      <button type="button" className={`sm-toggle-btn ${hideAnnotations ? "on" : ""}`} onClick={() => setHideAnnotations(v => !v)}>
-                        <span className="sm-toggle-thumb" />
-                      </button>
-                    </div>
-                    <div className="sm-toggle-row">
-                      <div className="sm-toggle-label">
-                        <strong>Laser Pointer Mode</strong>
-                        <small>Cursor becomes a red laser dot while drawing</small>
-                      </div>
-                      <button type="button" className={`sm-toggle-btn ${laserPointer ? "on" : ""}`} onClick={() => setLaserPointer(v => !v)}>
-                        <span className="sm-toggle-thumb" />
-                      </button>
-                    </div>
-                    <div className="sm-toggle-row">
-                      <div className="sm-toggle-label">
-                        <strong>Smooth Page Transitions</strong>
-                        <small>Fade animation between slides</small>
-                      </div>
-                      <button type="button" className={`sm-toggle-btn ${smoothTransition ? "on" : ""}`} onClick={() => setSmoothTransition(v => !v)}>
-                        <span className="sm-toggle-thumb" />
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Present mode shortcut */}
-                  <div className="settings-section">
-                    <h4>Presentation</h4>
-                    <div className="sm-btn-row">
-                      <button type="button" className="sm-btn sm-btn-primary" onClick={() => { setPresenting(v => !v); setSettingsOpen(false); }}>
-                        {presenting ? "⏹ Exit Presentation Mode" : "▶ Start Presenting"}
-                      </button>
-                    </div>
-                  </div>
-                </>
-              )}
-            </div>
-
-            {/* Footer */}
-            <div className="settings-modal-footer">
-              <span className="sm-footer-hint">Changes apply immediately</span>
-              <button type="button" className="sm-btn sm-btn-primary" onClick={() => setSettingsOpen(false)}>Done</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* FIX #13: Inline confirm dialog */}
-      {confirmState && (
-        <ConfirmDialog
-          message={confirmState.message}
-          onConfirm={confirmState.onConfirm}
-          onCancel={() => setConfirmState(null)}
-        />
-      )}
-
-      {/* ─── FLOATING SHAPES & GRAPH PANEL ───────────────────────────────────
-          Separate draggable window. position:fixed so it floats over everything
-          and is never clipped by the canvas or workspace overflow.           */}
+      {/* ─── Shapes and graph panel: floating, draggable ─────────────────── */}
       {shapesPanelOpen && (
         <div
           ref={shapesPanelRef}
           className="shapes-panel"
-          style={shapesPanelPos
-            ? { left: shapesPanelPos.x, top: shapesPanelPos.y, right: "auto" }
-            : undefined
-          }
+          style={shapesPanelPos ? { left: shapesPanelPos.x, top: shapesPanelPos.y, right: "auto", bottom: "auto" } : undefined}
           role="dialog"
-          aria-label="Shapes & Graph panel"
+          aria-label="Shapes and graph"
         >
-          {/* Drag header */}
           <div
-            className="shapes-panel-header"
+            className="shapes-panel-head"
             onPointerDown={e => {
+              if ((e.target as HTMLElement).closest("button")) return;
               e.preventDefault();
               e.currentTarget.setPointerCapture(e.pointerId);
               const rect = shapesPanelRef.current?.getBoundingClientRect();
@@ -2272,127 +2128,317 @@ export function ViewerClient() {
               };
             }}
           >
-            <span className="shapes-panel-title">⬡ Shapes & Graph</span>
-            <button
-              type="button"
-              className="shapes-panel-close"
-              onClick={() => setShapesPanelOpen(false)}
-              aria-label="Close shapes panel"
-            >✕</button>
+            <span className="shapes-panel-title"><Shapes size={18} aria-hidden="true" /> Shapes and graph</span>
+            <button type="button" className="btn-icon" onClick={() => setShapesPanelOpen(false)} aria-label="Close shapes panel">
+              <X size={18} aria-hidden="true" />
+            </button>
           </div>
+          <div className="shapes-panel-body">
+            {SHAPE_SECTIONS.map(section => (
+              <div key={section.label} className="shapes-section">
+                <span className="shapes-section-label">{section.label}</span>
+                <div className="shapes-grid">
+                  {section.items.map(item => (
+                    <button
+                      key={item.tool}
+                      type="button"
+                      className={`shape-btn ${tool === item.tool ? "is-active" : ""}`}
+                      title={item.label}
+                      aria-label={item.label}
+                      aria-pressed={tool === item.tool}
+                      onClick={() => { setTool(item.tool as AnnotationType); setPropertiesOpen(true); }}
+                    >
+                      <span className="shape-btn-icon" aria-hidden="true">{item.icon}</span>
+                      <span className="shape-btn-label">{item.label}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
-          {/* ── Basic shapes ── */}
-          <div className="shapes-panel-section">
-            <span className="shapes-panel-label">Basic</span>
-            <div className="shapes-panel-grid">
-              {([
-                ["rectangle", "□", "Rectangle"],
-                ["ellipse",   "○", "Circle"],
-                ["triangle",  "△", "Triangle"],
-                ["right-triangle","◺","Rt Triangle"],
-                ["diamond",   "◇", "Diamond"],
-                ["parallelogram","▱","Parallelogram"],
-              ] as [string, string, string][]).map(([t, icon, label]) => (
-                <button
-                  key={t}
-                  type="button"
-                  className={`shapes-panel-btn ${tool === t ? "active" : ""}`}
-                  title={label}
-                  onClick={() => { setTool(t as AnnotationType); setPropertiesOpen(true); }}
-                >
-                  <span className="sp-icon">{icon}</span>
-                  <span className="sp-label">{label}</span>
-                </button>
-              ))}
+      {/* ─── Text dialog ────────────────────────────────────────────────── */}
+      {textPoints && (
+        <div className="dialog-backdrop" role="presentation" onClick={e => { if (e.target === e.currentTarget) setTextPoints(null); }}>
+          <form
+            className="dialog-card sheet-form"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="text-dialog-title"
+            onSubmit={e => { e.preventDefault(); submitText(); }}
+          >
+            <h2 id="text-dialog-title">{editingId ? "Edit text" : "Add text"}</h2>
+            <label className="field">
+              Text
+              <input className="input" autoFocus value={textValue} onChange={e => setTextValue(e.target.value)} placeholder="Type your text" />
+            </label>
+            <label className="field">
+              Font
+              <select className="select" value={fontFamily} onChange={e => setFontFamily(e.target.value)}>
+                {fontFamilies.map(f => <option key={f.val} value={f.val}>{f.label}</option>)}
+              </select>
+            </label>
+            <div className="field">
+              <span>Size ({fontSize}px)</span>
+              <div className="segmented segmented-wrap" role="radiogroup" aria-label="Font size">
+                {fontSizePresets.map(fs => (
+                  <button key={fs} type="button" role="radio" aria-checked={fontSize === fs} className={`seg-btn ${fontSize === fs ? "is-active" : ""}`} onClick={() => setFontSize(fs)}>{fs}</button>
+                ))}
+              </div>
             </div>
-          </div>
-
-          {/* ── Polygons ── */}
-          <div className="shapes-panel-section">
-            <span className="shapes-panel-label">Polygons</span>
-            <div className="shapes-panel-grid">
-              {([
-                ["pentagon",  "⬠", "Pentagon"],
-                ["hexagon",   "⬡", "Hexagon"],
-                ["octagon",   "⯃", "Octagon"],
-                ["cross",     "✚", "Cross"],
-              ] as [string, string, string][]).map(([t, icon, label]) => (
-                <button
-                  key={t}
-                  type="button"
-                  className={`shapes-panel-btn ${tool === t ? "active" : ""}`}
-                  title={label}
-                  onClick={() => { setTool(t as AnnotationType); setPropertiesOpen(true); }}
-                >
-                  <span className="sp-icon">{icon}</span>
-                  <span className="sp-label">{label}</span>
-                </button>
-              ))}
+            <div className="dialog-actions">
+              <button type="button" className="btn btn-secondary" onClick={() => setTextPoints(null)}>Cancel</button>
+              <button className="btn btn-primary" type="submit" disabled={!textValue.trim()}>Add text</button>
             </div>
-          </div>
+          </form>
+        </div>
+      )}
 
-          {/* ── Decorative ── */}
-          <div className="shapes-panel-section">
-            <span className="shapes-panel-label">Decorative</span>
-            <div className="shapes-panel-grid">
-              {([
-                ["star",     "☆", "Star"],
-                ["heart",    "♡", "Heart"],
-                ["cloud",    "☁", "Cloud"],
-                ["cylinder", "⌻", "Cylinder"],
-              ] as [string, string, string][]).map(([t, icon, label]) => (
-                <button
-                  key={t}
-                  type="button"
-                  className={`shapes-panel-btn ${tool === t ? "active" : ""}`}
-                  title={label}
-                  onClick={() => { setTool(t as AnnotationType); setPropertiesOpen(true); }}
-                >
-                  <span className="sp-icon">{icon}</span>
-                  <span className="sp-label">{label}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* ── Connectors ── */}
-          <div className="shapes-panel-section">
-            <span className="shapes-panel-label">Connectors</span>
-            <div className="shapes-panel-grid">
-              {([
-                ["line",  "／", "Line"],
-                ["arrow", "➜", "Arrow"],
-              ] as [string, string, string][]).map(([t, icon, label]) => (
-                <button
-                  key={t}
-                  type="button"
-                  className={`shapes-panel-btn ${tool === t ? "active" : ""}`}
-                  title={label}
-                  onClick={() => { setTool(t as AnnotationType); setPropertiesOpen(true); }}
-                >
-                  <span className="sp-icon">{icon}</span>
-                  <span className="sp-label">{label}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* ── Graph / Data ── */}
-          <div className="shapes-panel-section">
-            <span className="shapes-panel-label">Data & Graph</span>
-            <div className="shapes-panel-grid">
-              <button
-                type="button"
-                className={`shapes-panel-btn ${tool === "graph" ? "active" : ""}`}
-                title="Graph"
-                onClick={() => { setTool("graph"); setPropertiesOpen(true); }}
-              >
-                <span className="sp-icon">📈</span>
-                <span className="sp-label">Graph</span>
+      {/* ─── Settings sheet ─────────────────────────────────────────────── */}
+      {settingsOpen && (
+        <div className="dialog-backdrop sheet-backdrop" role="presentation" onClick={() => setSettingsOpen(false)}>
+          <div className="sheet" role="dialog" aria-modal="true" aria-labelledby="settings-title" onClick={e => e.stopPropagation()}>
+            <div className="sheet-head">
+              <h2 id="settings-title">Settings</h2>
+              <button type="button" className="btn-icon" onClick={() => setSettingsOpen(false)} aria-label="Close settings">
+                <X size={20} aria-hidden="true" />
               </button>
+            </div>
+
+            <div className="sheet-tabs" role="tablist" aria-label="Settings sections">
+              {([["canvas", "Canvas"], ["tools", "Tools"], ["document", "Document"], ["view", "View"]] as const).map(([tab, label]) => (
+                <button key={tab} type="button" role="tab" id={`tab-${tab}`} aria-selected={settingsTab === tab} aria-controls="settings-panel"
+                  className={`sheet-tab ${settingsTab === tab ? "is-active" : ""}`} onClick={() => setSettingsTab(tab)}>
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            <div className="sheet-body" id="settings-panel" role="tabpanel" aria-labelledby={`tab-${settingsTab}`}>
+
+              {settingsTab === "canvas" && (
+                <>
+                  <section className="sheet-section">
+                    <h3>Slide background</h3>
+                    <div className="swatch-row">
+                      {[
+                        { label: "Dark slate", color: "#1e293b" },
+                        { label: "White", color: "#ffffff" },
+                        { label: "Deep blue", color: "#1e3a8a" },
+                        { label: "Board green", color: "#14532d" },
+                        { label: "Midnight", color: "#0f172a" },
+                        { label: "Warm cream", color: "#fdf6e3" },
+                        { label: "Soft grey", color: "#f1f5f9" },
+                        { label: "Deep purple", color: "#3b0764" },
+                      ].map(bg => (
+                        <button
+                          key={bg.color}
+                          type="button"
+                          className={`swatch ${bg.color === "#ffffff" || bg.color === "#fdf6e3" || bg.color === "#f1f5f9" ? "is-light" : ""} ${currentPage?.background === bg.color ? "is-active" : ""}`}
+                          style={{ backgroundColor: bg.color }}
+                          onClick={() => changePageBackground(bg.color)}
+                          title={bg.label}
+                          aria-label={bg.label}
+                          aria-pressed={currentPage?.background === bg.color}
+                        />
+                      ))}
+                      <label className="swatch swatch-custom" title="Custom colour">
+                        <span className="sr-only">Custom background colour</span>
+                        <input type="color" value={currentPage?.background || "#1e293b"} aria-label="Custom slide background colour" onChange={e => changePageBackground(e.target.value)} />
+                      </label>
+                    </div>
+                  </section>
+
+                  <section className="sheet-section">
+                    <h3>Grid overlay</h3>
+                    <div className="segmented" role="radiogroup" aria-label="Grid overlay">
+                      {([["none", "Off"], ["dots", "Dots"], ["lines", "Lines"]] as const).map(([g, label]) => (
+                        <button key={g} type="button" role="radio" aria-checked={gridType === g} className={`seg-btn ${gridType === g ? "is-active" : ""}`} onClick={() => setGridType(g)}>{label}</button>
+                      ))}
+                    </div>
+                  </section>
+
+                  <section className="sheet-section">
+                    <h3>Clear this page</h3>
+                    <div className="sheet-actions">
+                      <button type="button" className="btn btn-secondary" onClick={() => { clearDrawingsOnPage(); setSettingsOpen(false); }}>Clear ink</button>
+                      <button type="button" className="btn btn-secondary" onClick={() => { clearShapesOnPage(); setSettingsOpen(false); }}>Clear shapes</button>
+                      <button type="button" className="btn btn-danger" onClick={() => showConfirm("Clear every annotation on this page? This cannot be undone.", () => { clearAllOnPage(); setConfirmState(null); setSettingsOpen(false); })}>Clear all</button>
+                    </div>
+                  </section>
+                </>
+              )}
+
+              {settingsTab === "tools" && (
+                <>
+                  <section className="sheet-section">
+                    <h3>Default pen colour</h3>
+                    <div className="swatch-row">
+                      {["#000000", "#ffffff", "#2563eb", "#dc2626", "#16a34a", "#ca8a04", "#7c3aed", "#db2777"].map(c => (
+                        <button key={c} type="button" className={`swatch ${c === "#ffffff" ? "is-light" : ""} ${color === c ? "is-active" : ""}`}
+                          style={{ backgroundColor: c }} onClick={() => setColor(c)} aria-label={`Set pen colour ${c}`} aria-pressed={color === c} />
+                      ))}
+                      <label className="swatch swatch-custom" title="Custom colour">
+                        <span className="sr-only">Custom pen colour</span>
+                        <input type="color" value={color} aria-label="Custom pen colour" onChange={e => setColor(e.target.value)} />
+                      </label>
+                    </div>
+                  </section>
+
+                  <section className="sheet-section">
+                    <h3>Default stroke width</h3>
+                    <div className="segmented" role="radiogroup" aria-label="Default stroke width">
+                      {[2, 4, 6, 10, 16].map(w => (
+                        <button key={w} type="button" role="radio" aria-checked={width === w} className={`seg-btn ${width === w ? "is-active" : ""}`} onClick={() => setWidth(w)}>{w}px</button>
+                      ))}
+                    </div>
+                    <div className="sheet-slider">
+                      <input className="range" type="range" min="1" max="48" value={width} aria-label="Default stroke width slider" onChange={e => setWidth(+e.target.value)} />
+                      <span className="style-value">{width}px</span>
+                    </div>
+                  </section>
+
+                  <section className="sheet-section">
+                    <h3>Default opacity</h3>
+                    <div className="sheet-slider">
+                      <input className="range" type="range" min="0.1" max="1" step="0.05" value={opacity} aria-label="Default opacity" onChange={e => setOpacity(+e.target.value)} />
+                      <span className="style-value">{Math.round(opacity * 100)}%</span>
+                    </div>
+                  </section>
+
+                  <section className="sheet-section">
+                    <h3>Toolbar</h3>
+                    <ToggleRow label="Hide tools while drawing" hint="Collapses the toolbar when you use pen or ink" on={autoHideDock} onToggle={() => setAutoHideDock(v => !v)} />
+                    <ToggleRow label="Show page list" hint="Thumbnails on the left edge" on={sidebarOpen} onToggle={() => setSidebarOpen(v => !v)} />
+                  </section>
+                </>
+              )}
+
+              {settingsTab === "document" && (
+                <>
+                  <section className="sheet-section">
+                    <h3>Name</h3>
+                    {renamingDoc ? (
+                      <div className="rename-row">
+                        <input
+                          className="input"
+                          value={renameValue}
+                          autoFocus
+                          maxLength={80}
+                          onChange={e => setRenameValue(e.target.value)}
+                          onKeyDown={e => {
+                            if (e.key === "Enter" && renameValue.trim()) { setDocumentName(renameValue.trim()); setRenamingDoc(false); }
+                            if (e.key === "Escape") setRenamingDoc(false);
+                          }}
+                          aria-label="Presentation name"
+                        />
+                        <button type="button" className="btn btn-primary" onClick={() => { if (renameValue.trim()) { setDocumentName(renameValue.trim()); setRenamingDoc(false); } }}>Save</button>
+                        <button type="button" className="btn btn-secondary" onClick={() => setRenamingDoc(false)}>Cancel</button>
+                      </div>
+                    ) : (
+                      <div className="rename-row">
+                        <span className="sheet-doc-name">{documentName}</span>
+                        <button type="button" className="btn btn-secondary" onClick={() => { setRenameValue(documentName); setRenamingDoc(true); }}>Rename</button>
+                      </div>
+                    )}
+                  </section>
+
+                  <section className="sheet-section">
+                    <h3>Details</h3>
+                    <dl className="info-grid">
+                      <div><dt>Pages</dt><dd>{pages}</dd></div>
+                      <div><dt>Ink strokes</dt><dd>{annotations.filter(a => drawingTypes.includes(a.type as AnnotationType)).length}</dd></div>
+                      <div><dt>Shapes and text</dt><dd>{annotations.filter(a => !drawingTypes.includes(a.type as AnnotationType)).length}</dd></div>
+                      <div><dt>Total</dt><dd>{annotations.length}</dd></div>
+                    </dl>
+                  </section>
+
+                  <section className="sheet-section">
+                    <h3>Export</h3>
+                    <div className="sheet-actions">
+                      <button type="button" className="btn btn-primary" onClick={async () => {
+                        const blob = await pdfExporter.export(source, annotations, pageOrder);
+                        const link = document.createElement("a");
+                        link.href = URL.createObjectURL(blob);
+                        link.download = `${documentName.replace(/\s+/g, "_")}.pdf`;
+                        link.click();
+                        setSettingsOpen(false);
+                      }}>
+                        <Export size={18} aria-hidden="true" /> Export as PDF
+                      </button>
+                    </div>
+                  </section>
+
+                  <section className="sheet-section sheet-danger">
+                    <h3>Danger zone</h3>
+                    <p className="helper">Removes every annotation on every page. This cannot be undone.</p>
+                    <div className="sheet-actions">
+                      <button type="button" className="btn btn-danger" onClick={() => {
+                        showConfirm("Clear ALL annotations on ALL pages? This cannot be undone.", () => {
+                          commit([]);
+                          setConfirmState(null);
+                          setSettingsOpen(false);
+                        });
+                      }}>
+                        <Trash size={18} aria-hidden="true" /> Clear entire presentation
+                      </button>
+                    </div>
+                  </section>
+                </>
+              )}
+
+              {settingsTab === "view" && (
+                <>
+                  <section className="sheet-section">
+                    <h3>Zoom</h3>
+                    <div className="zoom-stepper zoom-stepper-wide">
+                      <button type="button" className="btn btn-secondary" onClick={() => setZoomLevel(zoom - 0.25)} aria-label="Zoom out">
+                        <MagnifyingGlassMinus size={18} aria-hidden="true" /> Out
+                      </button>
+                      <span className="zoom-value">{Math.round(zoom * 100)}%</span>
+                      <button type="button" className="btn btn-secondary" onClick={() => setZoomLevel(zoom + 0.25)} aria-label="Zoom in">
+                        <MagnifyingGlassPlus size={18} aria-hidden="true" /> In
+                      </button>
+                    </div>
+                    <div className="sheet-actions">
+                      <button type="button" className="btn btn-secondary" onClick={() => { resetView(); setSettingsOpen(false); }}>Fit to screen</button>
+                      <button type="button" className="btn btn-secondary" onClick={() => { toggleFullscreen(); setSettingsOpen(false); }}>
+                        {isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
+                      </button>
+                    </div>
+                  </section>
+
+                  <section className="sheet-section">
+                    <h3>Display</h3>
+                    <ToggleRow label="Hide all annotations" hint="Show slides only" on={hideAnnotations} onToggle={() => setHideAnnotations(v => !v)} />
+                    <ToggleRow label="Laser pointer" hint="Show a red dot where the pen is" on={laserPointer} onToggle={() => setLaserPointer(v => !v)} />
+                    <ToggleRow label="Smooth page transitions" hint="Fade between pages" on={smoothTransition} onToggle={() => setSmoothTransition(v => !v)} />
+                  </section>
+
+                  <section className="sheet-section">
+                    <h3>Presentation</h3>
+                    <div className="sheet-actions">
+                      <button type="button" className="btn btn-primary" onClick={() => { setPresenting(v => !v); setSettingsOpen(false); }}>
+                        {presenting ? <Stop size={18} weight="fill" aria-hidden="true" /> : <Play size={18} weight="fill" aria-hidden="true" />}
+                        {presenting ? "Exit presentation" : "Start presenting"}
+                      </button>
+                    </div>
+                  </section>
+                </>
+              )}
             </div>
           </div>
         </div>
+      )}
+
+      {confirmState && (
+        <ConfirmDialog
+          message={confirmState.message}
+          onConfirm={confirmState.onConfirm}
+          onCancel={() => setConfirmState(null)}
+        />
       )}
     </main>
   );

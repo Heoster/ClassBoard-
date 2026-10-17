@@ -8,7 +8,7 @@
  * EDLA-certified interactive flat panels ship without cellular radios, GPS
  * chips, device cameras, or biometric sensors. Any code that calls these APIs
  * unconditionally will throw, hang, or show permission prompts that can never
- * be satisfied — breaking initialisation on smartboards.
+ * be satisfied - breaking initialisation on smartboards.
  *
  * Solution
  * ────────
@@ -28,7 +28,7 @@
  *   } from "@/lib/device/sensor-guard";
  *
  *   // Each function returns null / a safe default instead of throwing when
- *   // the hardware is absent — no try/catch needed at call-site.
+ *   // the hardware is absent - no try/catch needed at call-site.
  *   const position    = await getGeolocation();      // null on EDLA boards
  *   const stream      = await getCameraStream();     // null on EDLA boards
  *   const networkInfo = getNetworkType();            // "unknown" on EDLA
@@ -168,7 +168,7 @@ export async function getCameraStream(
 
 /**
  * Enumerate available media devices without requesting a stream.
- * Returns [] on EDLA boards without a camera — safe to call unconditionally.
+ * Returns [] on EDLA boards without a camera - safe to call unconditionally.
  */
 export async function listCameras(): Promise<MediaDeviceInfo[]> {
   if (typeof navigator === "undefined")              return [];
@@ -300,11 +300,11 @@ export function getDeviceProfile(): DeviceProfile {
     connectionType: conn?.type          ?? "unknown",
     effectiveType:  conn?.effectiveType ?? "unknown",
     isOnline:       navigator.onLine,
-    // Pointer capability detection — critical for stylus-only EDLA boards
+    // Pointer capability detection - critical for stylus-only EDLA boards
     hasPointer:      window.matchMedia("(any-pointer: coarse), (any-pointer: fine)").matches,
     hasTouch:        window.matchMedia("(any-pointer: coarse)").matches,
     hasFinePointer:  window.matchMedia("(any-pointer: fine)").matches,
-    // Sensor presence flags (no hardware access — just API detection)
+    // Sensor presence flags (no hardware access - just API detection)
     hasGeolocation:  "geolocation" in navigator,
     hasCamera:       "mediaDevices" in navigator &&
                      typeof (navigator.mediaDevices as MediaDevices | undefined)?.getUserMedia === "function",
@@ -331,6 +331,6 @@ export async function whenAvailable(
   try {
     if (check()) await init();
   } catch {
-    // non-fatal — hardware unavailable
+    // non-fatal - hardware unavailable
   }
 }

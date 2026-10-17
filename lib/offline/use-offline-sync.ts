@@ -1,14 +1,14 @@
 /**
  * lib/offline/use-offline-sync.ts
  *
- * React hook — wires the IndexedDB local-db + sync-queue into viewer-client.tsx.
+ * React hook - wires the IndexedDB local-db + sync-queue into viewer-client.tsx.
  *
  * What this hook does
  * ───────────────────
  * • On mount: restores any cached annotations from IndexedDB so the viewer
  *   renders instantly, even before the Supabase round-trip completes.
  * • Every annotation commit: writes to IndexedDB first (synchronous UX), then
- *   schedules a debounced cloud upsert.  No delete-then-reinsert — safe against
+ *   schedules a debounced cloud upsert.  No delete-then-reinsert - safe against
  *   partial failures.
  * • Page-layout changes: persisted locally via the "pages" store and synced to
  *   cloud as a special __page_layout__ annotation (same format the old saveCloud
@@ -46,7 +46,7 @@ import { getSupabaseBrowserClient } from "../supabase/client";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-/** Shape of one viewer "page" — kept in sync with ViewerPage in viewer-client */
+/** Shape of one viewer "page" - kept in sync with ViewerPage in viewer-client */
 export interface ViewerPageRecord {
   id: string;
   sourcePage?: number;
@@ -97,11 +97,11 @@ export function useOfflineSync({
   // useRef so the function is always the latest without being in dep arrays.
   const cloudWriterRef = useRef<CloudWriter | null>(null);
 
-  // Build the writer once and keep it in the ref — rebuilt only when the
+  // Build the writer once and keep it in the ref - rebuilt only when the
   // component re-mounts (which resets restoredRef anyway).
   useEffect(() => {
     cloudWriterRef.current = async (item) => {
-      // Will throw "Supabase is not configured" if env vars are missing —
+      // Will throw "Supabase is not configured" if env vars are missing -
       // sync-queue catches that and marks the item failed + sets cloudAvailable=false.
       const supabase = getSupabaseBrowserClient();
 
@@ -159,7 +159,7 @@ export function useOfflineSync({
             .from("documents")
             .update({ updated_at: new Date().toISOString() })
             .eq("id", docId);
-          // Suppress error — non-critical if document row doesn't exist offline
+          // Suppress error - non-critical if document row doesn't exist offline
           break;
         }
 
@@ -173,7 +173,7 @@ export function useOfflineSync({
       }
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // intentionally empty — writer must be stable
+  }, []); // intentionally empty - writer must be stable
 
   // Stable wrapper so initSyncManager always gets the ref's current function
   const stableWriter = useCallback<CloudWriter>(

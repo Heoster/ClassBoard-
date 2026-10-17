@@ -1,15 +1,18 @@
 import Link from "next/link";
+import { CaretLeft } from "@phosphor-icons/react/ssr";
 import { SignInPanel } from "../../components/auth/sign-in-panel";
 
 export default function SignInPage() {
   return (
-    <main className="auth-page" style={{ justifyContent: "center" }}>
-      <section style={{ maxWidth: "440px", margin: "0 auto" }}>
-        <Link href="/">← MAPLES ACADEMY SMARTBOARD TOOL</Link>
-        <h1>Account Access</h1>
-        <p>Sign in to your account or create a new account to save classroom lessons.</p>
-        <SignInPanel />
-      </section>
+    <main className="centered-shell" style={{ maxWidth: "440px" }}>
+      <Link href="/" className="btn btn-ghost" style={{ justifySelf: "start", paddingLeft: "0.5rem" }}>
+        <CaretLeft size={18} aria-hidden="true" /> Back
+      </Link>
+      <div className="stack">
+        <h1>Sign in</h1>
+        <p className="muted">Sign in to sync lessons and annotations. You can still open the board without an account.</p>
+      </div>
+      <SignInPanel />
     </main>
   );
 }

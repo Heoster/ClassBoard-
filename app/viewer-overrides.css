@@ -1,8 +1,0 @@
-/* viewer-overrides.css
-   This file previously re-declared many properties from viewer.css, causing
-   conflicts. It has been cleaned up — only genuine additions remain.
-   All layout, sizing, and positioning is now owned by viewer.css.
-*/
-
-/* Dashboard activity summary (non-viewer component, kept here) */
-.activity-summary { margin: 0.7rem 0 0; color: #8b97aa; font-size: 0.68rem; }

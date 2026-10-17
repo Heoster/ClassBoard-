@@ -8,6 +8,15 @@ importers:
 
   .:
     dependencies:
+      '@fontsource-variable/geist':
+        specifier: ^5.3.0
+        version: 5.3.0
+      '@fontsource-variable/geist-mono':
+        specifier: ^5.3.0
+        version: 5.3.0
+      '@phosphor-icons/react':
+        specifier: ^2.1.10
+        version: 2.1.10(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       '@supabase/ssr':
         specifier: ^0.12.7
         version: 0.12.7(@supabase/supabase-js@2.116.0)
@@ -341,6 +350,12 @@ packages:
   '@eslint/plugin-kit@0.4.1':
     resolution: {integrity: sha512-43/qtrDUokr7LJqoF2c3+RInu/t4zfrpYdoSDfYyhg52rwLV6TnOvdG4fXm7IkSB3wErkcmJS9iEhjVtOSEjjA==}
     engines: {node: ^18.18.0 || ^20.9.0 || >=21.1.0}
+
+  '@fontsource-variable/geist-mono@5.3.0':
+    resolution: {integrity: sha512-vBbuwDEo9AkrqADMXOrlAR3DFcJi4/JxeuU43FoiQERnNwsfXNnvxvReZG02cQKmyk4DZkZdBZX3oTDvy2zBAw==}
+
+  '@fontsource-variable/geist@5.3.0':
+    resolution: {integrity: sha512-j0m+vLQuG5XAYoHtGCVu0spvlGreR3EzpECUVzkFmI1mTVnAO38l/NEPDCFgZ177JxzYJCLSmTQibIiYPilGrA==}
 
   '@humanfs/core@0.19.2':
     resolution: {integrity: sha512-UhXNm+CFMWcbChXywFwkmhqjs3PRCmcSa/hfBgLIb7oQ5HNb1wS0icWsGtSAUNgefHeI+eBrA8I1fxmbHsGdvA==}
@@ -708,6 +723,13 @@ packages:
 
   '@pdf-lib/upng@1.0.1':
     resolution: {integrity: sha512-dQK2FUMQtowVP00mtIksrlZhdFXQZPC+taih1q4CvPZ5vqdxR/LKBaFg0oAfzd1GlHZXXSPdQfzQnt+ViGvEIQ==}
+
+  '@phosphor-icons/react@2.1.10':
+    resolution: {integrity: sha512-vt8Tvq8GLjheAZZYa+YG/pW7HDbov8El/MANW8pOAz4eGxrwhnbfrQZq0Cp4q8zBEu8NIhHdnr+r8thnfRSNYA==}
+    engines: {node: '>=10'}
+    peerDependencies:
+      react: '>= 16.8'
+      react-dom: '>= 16.8'
 
   '@pkgr/core@0.3.6':
     resolution: {integrity: sha512-SEeaJLb3qBNF/OaXnaR1NmmBbFYk1zC0ZH/52fATcRPLFg/p791YrcyFFy44Bo9sLaGuSuLp5Q6axbb/O+v/RA==}
@@ -2836,6 +2858,10 @@ snapshots:
       '@eslint/core': 0.17.0
       levn: 0.4.1
 
+  '@fontsource-variable/geist-mono@5.3.0': {}
+
+  '@fontsource-variable/geist@5.3.0': {}
+
   '@humanfs/core@0.19.2':
     dependencies:
       '@humanfs/types': 0.15.0
@@ -3087,6 +3113,11 @@ snapshots:
   '@pdf-lib/upng@1.0.1':
     dependencies:
       pako: 1.0.11
+
+  '@phosphor-icons/react@2.1.10(react-dom@19.3.0(react@19.3.0))(react@19.3.0)':
+    dependencies:
+      react: 19.3.0
+      react-dom: 19.3.0(react@19.3.0)
 
   '@pkgr/core@0.3.6': {}
 

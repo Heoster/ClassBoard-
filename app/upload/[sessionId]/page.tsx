@@ -3,7 +3,7 @@ import { MobileUpload } from "../../../components/upload/mobile-upload";
 
 // This route is intentionally unauthenticated (students scan a QR code).
 // The session-delivery feature (sending the uploaded PDF to the teacher's board)
-// is NOT yet implemented — uploads only reach the local importDocument() helper.
+// is NOT yet implemented - uploads only reach the local importDocument() helper.
 // Until the Supabase session handshake is complete, reject any request that
 // would make a student believe their file was delivered to the classroom.
 const SESSION_UPLOAD_ENABLED = process.env.ENABLE_SESSION_UPLOAD === "true";

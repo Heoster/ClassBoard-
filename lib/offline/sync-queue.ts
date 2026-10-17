@@ -5,21 +5,21 @@
  *
  * Key design decisions
  * ────────────────────
- * 1. LOCAL FIRST — every write hits IndexedDB synchronously (from the caller's
+ * 1. LOCAL FIRST - every write hits IndexedDB synchronously (from the caller's
  *    perspective) before any cloud attempt.  The app works 100% offline.
  *
- * 2. DEBOUNCED FLUSH — after a write is enqueued, we wait DEBOUNCE_MS (1 500 ms)
+ * 2. DEBOUNCED FLUSH - after a write is enqueued, we wait DEBOUNCE_MS (1 500 ms)
  *    before pushing to the cloud.  Rapid strokes / transforms collapse into a
  *    single network round-trip instead of one per pointer-up event.
  *
- * 3. SAFE UPSERT — the cloud writer does per-annotation upsert, never a
+ * 3. SAFE UPSERT - the cloud writer does per-annotation upsert, never a
  *    delete-then-reinsert.  No data loss if the network drops between the two ops.
  *
- * 4. CLOUD AVAILABILITY TRACKING — if Supabase is unreachable (missing env vars,
+ * 4. CLOUD AVAILABILITY TRACKING - if Supabase is unreachable (missing env vars,
  *    network error, or auth error) `_cloudAvailable` flips to false and the UI
  *    shows a warning banner.  It recovers automatically on the next successful write.
  *
- * 5. DEDUPLICATION — before enqueuing an upsert we remove any earlier pending
+ * 5. DEDUPLICATION - before enqueuing an upsert we remove any earlier pending
  *    upsert for the same annotation ID so the queue never grows unboundedly for
  *    a single frequently-updated annotation.
  */
@@ -60,7 +60,7 @@ export interface SyncManagerOptions {
   onNetworkChange?: (online: boolean) => void;
   /**
    * Notified when cloud reachability changes.
-   * false = Supabase unreachable / not configured — show warning banner.
+   * false = Supabase unreachable / not configured - show warning banner.
    * true  = last write succeeded.
    */
   onCloudStatusChange?: (available: boolean) => void;
@@ -88,7 +88,7 @@ let _cloudAvailable        = true;  // optimistic default; set false on first fa
 // ─── Public API ───────────────────────────────────────────────────────────────
 
 /**
- * Boot the sync manager.  Idempotent — safe to call on every mount.
+ * Boot the sync manager.  Idempotent - safe to call on every mount.
  * Must be called from a browser context (guarded against SSR).
  */
 export function initSyncManager(options: SyncManagerOptions): void {
@@ -141,7 +141,7 @@ export function destroySyncManager(): void {
 
 /**
  * Enqueue a local write and arm the debounce timer.
- * The item is in IndexedDB before this promise resolves — safe to return to the UI.
+ * The item is in IndexedDB before this promise resolves - safe to return to the UI.
  *
  * For upsert-annotation operations we deduplicate: any earlier pending upsert
  * for the same annotation id is removed so the queue only carries the latest state.
@@ -167,7 +167,7 @@ export async function scheduleSync(
 
   void notifyCount();
 
-  // Arm debounce — reset the timer on every new write so bursts collapse
+  // Arm debounce - reset the timer on every new write so bursts collapse
   if (navigator.onLine) {
     armDebounce();
   }
@@ -260,7 +260,7 @@ async function doFlush(): Promise<void> {
             lastAttemptAt: new Date().toISOString(),
           });
           setTimeout(() => { if (navigator.onLine) void doFlush(); }, backoffMs);
-          // Transient network error — cloud may still be available; don't flip flag yet
+          // Transient network error - cloud may still be available; don't flip flag yet
         }
       }
     }
@@ -295,7 +295,7 @@ async function deduplicatePending(
       }
     }
   } catch {
-    // Non-fatal — a duplicate entry just wastes one extra round-trip
+    // Non-fatal - a duplicate entry just wastes one extra round-trip
   }
 }
 

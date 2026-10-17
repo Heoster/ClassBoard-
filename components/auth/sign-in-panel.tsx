@@ -55,93 +55,88 @@ export function SignInPanel() {
     }
   };
 
+  const switchMode = (next: AuthMode) => {
+    setMode(next);
+    setMessage("");
+  };
+
   return (
-    <form className="sign-in" onSubmit={submit}>
-      <div className="tabs" style={{ display: "flex", gap: "0.5rem", marginBottom: "0.5rem" }}>
+    <form className="form-stack" onSubmit={submit}>
+      <div className="segmented auth-tabs" role="tablist" aria-label="Account">
         <button
           type="button"
-          className={mode === "signIn" ? "active" : ""}
-          onClick={() => { setMode("signIn"); setMessage(""); }}
-          style={{ flex: 1, padding: "0.5rem", borderRadius: "8px", fontWeight: "bold" }}
+          role="tab"
+          aria-selected={mode === "signIn"}
+          className={`seg-btn${mode === "signIn" ? " is-active" : ""}`}
+          onClick={() => switchMode("signIn")}
         >
-          Sign In
+          Sign in
         </button>
         <button
           type="button"
-          className={mode === "signUp" ? "active" : ""}
-          onClick={() => { setMode("signUp"); setMessage(""); }}
-          style={{ flex: 1, padding: "0.5rem", borderRadius: "8px", fontWeight: "bold" }}
+          role="tab"
+          aria-selected={mode === "signUp"}
+          className={`seg-btn${mode === "signUp" ? " is-active" : ""}`}
+          onClick={() => switchMode("signUp")}
         >
-          Sign Up
+          Create account
         </button>
       </div>
 
       {mode === "signUp" && (
-        <label>
-          Full name / Teacher name
+        <label className="field">
+          Full name
           <input
+            className="input"
             type="text"
+            autoComplete="name"
             value={fullName}
             onChange={e => setFullName(e.target.value)}
-            placeholder="e.g. Sarah Jenkins"
+            placeholder="Sarah Jenkins"
           />
         </label>
       )}
 
-      <label>
-        Email address
+      <label className="field">
+        Email
         <input
+          className="input"
           required
           type="email"
+          inputMode="email"
+          autoComplete="email"
           value={email}
           onChange={e => setEmail(e.target.value)}
           placeholder="teacher@school.edu"
         />
       </label>
 
-      <label>
+      <label className="field">
         Password
         <input
+          className="input"
           required
           type="password"
           minLength={6}
+          autoComplete={mode === "signUp" ? "new-password" : "current-password"}
           value={password}
           onChange={e => setPassword(e.target.value)}
-          placeholder="••••••••"
+          placeholder="At least 6 characters"
         />
       </label>
 
-      <button className="primary" type="submit">
-        {mode === "signUp" ? "Create Account" : "Sign in"}
+      <button className="btn btn-primary btn-block" type="submit">
+        {mode === "signUp" ? "Create account" : "Sign in"}
       </button>
 
-      {message && <p aria-live="polite">{message}</p>}
+      {message && <p className="notice" aria-live="polite" role="status">{message}</p>}
 
-      <div style={{ marginTop: "0.5rem", textAlign: "center", fontSize: "0.85rem" }}>
-        {mode === "signIn" ? (
-          <span>
-            Need an account?{" "}
-            <button
-              type="button"
-              style={{ background: "none", border: "none", color: "#2563eb", textDecoration: "underline", cursor: "pointer", font: "inherit", padding: 0 }}
-              onClick={() => { setMode("signUp"); setMessage(""); }}
-            >
-              Sign up here
-            </button>
-          </span>
-        ) : (
-          <span>
-            Already have an account?{" "}
-            <button
-              type="button"
-              style={{ background: "none", border: "none", color: "#2563eb", textDecoration: "underline", cursor: "pointer", font: "inherit", padding: 0 }}
-              onClick={() => { setMode("signIn"); setMessage(""); }}
-            >
-              Sign in here
-            </button>
-          </span>
-        )}
-      </div>
+      <p className="link-row">
+        {mode === "signIn" ? "New here?" : "Already have an account?"}{" "}
+        <button type="button" className="text-button" onClick={() => switchMode(mode === "signIn" ? "signUp" : "signIn")}>
+          {mode === "signIn" ? "Create an account" : "Sign in"}
+        </button>
+      </p>
     </form>
   );
 }

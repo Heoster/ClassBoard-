@@ -1,48 +1,100 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { CaretRight, FilePdf, FolderSimple, Plus, Presentation, UploadSimple } from "@phosphor-icons/react/ssr";
 import { getSupabaseServerClient } from "../../lib/supabase/server";
-
-const recentLessons = [
-	{ title: "Introduction to Fractions", meta: "Math 5A · Edited today", tone: "blue" },
-	{ title: "The Water Cycle", meta: "Science 6B · Edited yesterday", tone: "green" },
-	{ title: "World Regions Review", meta: "Geography · Edited Sep 10", tone: "orange" },
-];
+import { BottomNav } from "../../components/app/bottom-nav";
 
 export default async function DashboardPage() {
-	const client = await getSupabaseServerClient();
-	const [{ data: cloudDocuments }, { count: annotationCount }, { data: authData, error: authError }] = await Promise.all([
-		client.from("documents").select("id,filename,document_type,updated_at,page_count").order("updated_at", { ascending: false }).limit(6),
-		client.from("annotations").select("id", { count: "exact", head: true }),
-		client.auth.getUser(),
-	]);
-	if (authError || !authData.user) redirect("/sign-in");
-	const user = authData.user;
-	const { data: documentTotals } = await client.from("documents").select("id,page_count,updated_at");
-	const pdfCount = documentTotals?.length ?? 0;
-	const pageCount = documentTotals?.reduce((total, document) => total + (document.page_count ?? 0), 0) ?? 0;
-	const weekStart = new Date();
-	weekStart.setDate(weekStart.getDate() - 6);
-	const recentActivity = documentTotals?.filter(document => new Date(document.updated_at) >= weekStart).length ?? 0;
-	const activityBars = Array.from({ length: 7 }, (_, index) => Math.max(12, Math.min(100, ((recentActivity + index * 3) % 9 + 2) * 10)));
-	const dashboardDate = new Intl.DateTimeFormat("en-US", { weekday: "long", month: "long", day: "numeric" }).format(new Date()).toUpperCase();
-	const lessons = cloudDocuments?.length ? cloudDocuments.map((document, index) => ({ title: document.filename, meta: `${document.document_type.toUpperCase()} · Updated ${new Date(document.updated_at).toLocaleDateString()}`, tone: ["blue", "green", "orange"][index % 3], href: `/viewer?doc=${document.id}` })) : recentLessons.map(lesson => ({ ...lesson, href: "/viewer" }));
-	return <main className="dashboard">
-		<header className="dashboard-header">
-			<Link className="brand" href="/"><span className="brand-mark">M</span><span>MAPLES ACADEMY<br /><small>SMARTBOARD TOOL</small></span></Link>
-			<nav aria-label="Main navigation"><Link className="nav-active" href="/dashboard">Workspace</Link><Link href="/documents">Documents</Link><Link href="/viewer">Present</Link><Link href="/settings">Account</Link></nav>
-			<Link className="primary" href="/upload">+ UPLOAD PDF</Link>
-		</header>
-		<div className="dashboard-shell">
-			<aside className="dashboard-sidebar"><p className="sidebar-label">Workspace</p><Link className="sidebar-active" href="/dashboard">▦ <span>Overview</span></Link><Link href="/documents">▤ <span>All documents</span></Link><Link href="/documents">◉ <span>Shared with me</span></Link><p className="sidebar-label sidebar-spacer">Manage</p><Link href="/documents">□ <span>PDF library</span></Link><Link href="/settings">⚙ <span>Settings</span></Link><div className="sidebar-footer"><strong>{user?.email ?? "Maples Academy"}</strong><span>Teacher workspace</span></div></aside>
-			<section className="dashboard-content">
-				<div className="dashboard-welcome"><div><p className="eyebrow">{dashboardDate}</p><h1>Good morning, teacher.</h1><p>Pick up where you left off or start a fresh lesson.</p></div><div className="status-pill"><span /> All systems ready</div></div>
-				<div className="dashboard-grid">
-					<section className="dashboard-panel quick-panel"><div className="panel-heading"><div><p className="eyebrow">QUICK START</p><h2>Build something new</h2></div><span className="panel-icon">✦</span></div><div className="quick-actions"><Link href="/viewer"><span className="action-icon blue-icon">＋</span><span><strong>Blank board</strong><small>Start with a clean canvas</small></span><b>→</b></Link><Link href="/viewer"><span className="action-icon purple-icon">▧</span><span><strong>Upload PDF</strong><small>Save a lesson to the cloud</small></span><b>→</b></Link></div></section>
-					<section className="dashboard-panel stats-panel"><div className="panel-heading"><div><p className="eyebrow">LIVE LIBRARY</p><h2>Your activity</h2></div><span className="panel-icon">↗</span></div><div className="stats"><div><strong>{pdfCount}</strong><span>PDFs saved</span></div><div><strong>{annotationCount ?? 0}</strong><span>Annotations</span></div><div><strong>{pageCount}</strong><span>Pages available</span></div></div><div className="activity-bar">{activityBars.map((height, index) => <span key={index} style={{ height: `${height}%` }} />)}</div><div className="days"><span>6d ago</span><span>5d</span><span>4d</span><span>3d</span><span>2d</span><span>Yesterday</span><span>Today</span></div><p className="activity-summary">{recentActivity} document{recentActivity === 1 ? "" : "s"} updated in the last 7 days</p></section>
-				</div>
-				<section className="dashboard-panel lessons-panel"><div className="panel-heading"><div><p className="eyebrow">YOUR LIBRARY</p><h2>Recent lessons</h2></div><Link className="text-link" href="/documents">View all →</Link></div><div className="lesson-list">{lessons.map((lesson, index) => <Link className="lesson-row" href={lesson.href} key={`${lesson.href}-${index}`}><span className={`lesson-thumb ${lesson.tone}`}><span>▤</span></span><span className="lesson-copy"><strong>{lesson.title}</strong><small>{lesson.meta}</small></span><span className="lesson-more">•••</span></Link>)}</div></section>
-				<div className="dashboard-grid lower-grid"><section className="dashboard-panel announcement-panel"><div className="panel-heading"><div><p className="eyebrow">CLASSROOM TIP</p><h2>Keep your board clear</h2></div><span className="panel-icon">☼</span></div><p>Use the presentation view to hide your controls and keep students focused on the lesson.</p><Link className="text-link" href="/viewer">Open presentation view →</Link></section><section className="dashboard-panel storage-panel"><div className="panel-heading"><div><p className="eyebrow">LIBRARY STATUS</p><h2>Cloud library</h2></div><strong className="storage-number">{pdfCount}</strong></div><div className="storage-track"><span style={{ width: `${Math.min(100, pdfCount * 10)}%` }} /></div><p>{pdfCount === 0 ? "No PDFs saved yet" : `${pdfCount} PDF${pdfCount === 1 ? "" : "s"} available on your devices`}</p><Link className="text-link" href="/documents">Explore documents →</Link></section></div>
-			</section>
-		</div>
-	</main>;
+  const client = await getSupabaseServerClient();
+  const { data: authData, error: authError } = await client.auth.getUser();
+  if (authError || !authData.user) redirect("/sign-in");
+  const user = authData.user;
+
+  const [{ data: documents }, { count: annotationCount }] = await Promise.all([
+    client.from("documents").select("id,filename,document_type,storage_path,page_count,updated_at").eq("document_type", "pdf").order("updated_at", { ascending: false }).limit(50),
+    client.from("annotations").select("id", { count: "exact", head: true }),
+  ]);
+
+  const library = documents ?? [];
+  const pdfCount = library.filter(d => d.storage_path !== "blank").length;
+  const pageCount = library.reduce((total, d) => total + (d.page_count ?? 0), 0);
+  const recent = library.slice(0, 5);
+  const name = (user.user_metadata?.full_name as string | undefined)?.split(" ")[0] ?? user.email?.split("@")[0] ?? "there";
+  const today = new Intl.DateTimeFormat("en-GB", { weekday: "long", day: "numeric", month: "long" }).format(new Date());
+
+  return (
+    <>
+      <header className="app-bar">
+        <h1>Home</h1>
+        <Link className="btn btn-secondary" href="/upload" style={{ minHeight: "44px", padding: "0 0.875rem" }}>
+          <UploadSimple size={18} aria-hidden="true" /> Import
+        </Link>
+      </header>
+
+      <main className="app-main">
+        <div className="page-head">
+          <p className="eyebrow">{today}</p>
+          <h1>Welcome back, {name}</h1>
+        </div>
+
+        <div className="quick-grid">
+          <Link className="action-tile" href="/viewer">
+            <span className="icon-badge"><Presentation size={22} aria-hidden="true" /></span>
+            <strong>Open the board</strong>
+            <span>Annotate or present a lesson</span>
+          </Link>
+          <Link className="action-tile" href="/upload">
+            <span className="icon-badge"><Plus size={22} aria-hidden="true" /></span>
+            <strong>Add a PDF</strong>
+            <span>Save a lesson to your library</span>
+          </Link>
+        </div>
+
+        <div className="section-head" style={{ marginTop: "1.5rem" }}>
+          <h2>Your library</h2>
+        </div>
+        <div className="stat-strip" role="list" aria-label="Library totals">
+          <div className="stat" role="listitem"><span className="stat-value">{pdfCount}</span><span className="stat-label">PDFs</span></div>
+          <div className="stat" role="listitem"><span className="stat-value">{pageCount}</span><span className="stat-label">Pages</span></div>
+          <div className="stat" role="listitem"><span className="stat-value">{annotationCount ?? 0}</span><span className="stat-label">Annotations</span></div>
+        </div>
+
+        <div className="section-head">
+          <h2>Recent</h2>
+          {library.length > 0 && <Link className="btn btn-ghost" href="/documents">See all</Link>}
+        </div>
+
+        {recent.length > 0 ? (
+          <ul className="list">
+            {recent.map(doc => (
+              <li key={doc.id}>
+                <Link className="list-item" href={`/viewer?doc=${doc.id}`}>
+                  <span className="doc-thumb" aria-hidden="true">{doc.storage_path === "blank" ? "SLIDE" : "PDF"}</span>
+                  <span className="list-item-body">
+                    <span className="list-item-title">{doc.filename}</span>
+                    <span className="list-item-meta">
+                      {doc.storage_path === "blank" ? "Blank presentation" : doc.page_count ? `${doc.page_count} pages` : "PDF document"} · {new Date(doc.updated_at).toLocaleDateString("en-GB")}
+                    </span>
+                  </span>
+                  <CaretRight size={18} className="muted" aria-hidden="true" />
+                </Link>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <div className="empty-state">
+            <span className="icon-badge" aria-hidden="true"><FolderSimple size={22} /></span>
+            <h2>No lessons yet</h2>
+            <p>Add a PDF to your library, or open a blank 16:9 board to start writing.</p>
+            <div className="stack" style={{ gridAutoFlow: "column", gap: "0.5rem", marginTop: "0.5rem" }}>
+              <Link className="btn btn-primary" href="/upload"><FilePdf size={18} aria-hidden="true" /> Add a PDF</Link>
+              <Link className="btn btn-secondary" href="/viewer">Blank board</Link>
+            </div>
+          </div>
+        )}
+      </main>
+
+      <BottomNav />
+    </>
+  );
 }

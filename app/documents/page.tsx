@@ -1,16 +1,61 @@
 import Link from "next/link";
+import { FilePdf, Plus } from "@phosphor-icons/react/ssr";
 import { getSupabaseServerClient } from "../../lib/supabase/server";
 import { DeleteDocumentButton } from "../../components/documents/delete-document-button";
-import "./documents.css";
+import { BottomNav } from "../../components/app/bottom-nav";
 
 export default async function DocumentsPage() {
   const client = await getSupabaseServerClient();
   const { data: documents, error } = await client.from("documents").select("id,filename,page_count,updated_at,created_at,storage_path").eq("document_type", "pdf").order("updated_at", { ascending: false });
+  const count = documents?.length ?? 0;
 
-  return <main className="documents-page">
-    <header className="documents-header"><Link className="brand" href="/dashboard"><span className="brand-mark">M</span><span>MAPLES ACADEMY<br /><small>SMARTBOARD TOOL</small></span></Link><div className="documents-actions"><Link className="secondary" href="/dashboard">Dashboard</Link><Link className="primary" href="/upload">+ Open PDF</Link></div></header>
-    <section className="documents-content"><div className="documents-intro"><div><p className="eyebrow">CLOUD LIBRARY</p><h1>All documents</h1><p>Every PDF in your classroom workspace, available on any signed-in device.</p></div><span className="document-count">{documents?.length ?? 0} PDFs</span></div>
-      {error ? <div className="documents-empty"><h2>Unable to load documents</h2><p>{error.message}</p></div> : documents?.length ? <div className="documents-grid">{documents.map(document => <article className="document-card" key={document.id}><Link href={`/viewer?doc=${document.id}`}><div className="document-preview"><span>{document.storage_path === "blank" ? "SLIDE" : "PDF"}</span><strong>▤</strong></div><div className="document-card-body"><h2>{document.filename}</h2><p>{document.storage_path === "blank" ? "Blank Presentation" : document.page_count ? `${document.page_count} pages` : "PDF document"} · Updated {new Date(document.updated_at).toLocaleDateString()}</p><span>Open document →</span></div></Link><DeleteDocumentButton documentId={document.id} filename={document.filename} storagePath={document.storage_path} /></article>)}</div> : <div className="documents-empty"><span className="empty-icon">＋</span><h2>Your library is empty</h2><p>Open a PDF to save it securely to your classroom cloud.</p><Link className="primary" href="/upload">Open a PDF</Link></div>}
-    </section>
-  </main>;
+  return (
+    <>
+      <header className="app-bar">
+        <h1>Library</h1>
+        <Link className="btn btn-primary" href="/upload" style={{ minHeight: "44px", padding: "0 0.875rem" }}>
+          <Plus size={18} aria-hidden="true" /> Add
+        </Link>
+      </header>
+
+      <main className="app-main">
+        <div className="page-head">
+          <p className="muted">{count} {count === 1 ? "lesson" : "lessons"} saved to your account</p>
+        </div>
+
+        {error ? (
+          <div className="notice is-error" role="alert">
+            <strong>Could not load your library.</strong>
+            <span>{error.message}</span>
+          </div>
+        ) : count > 0 ? (
+          <ul className="list">
+            {documents!.map(document => (
+              <li key={document.id} className="doc-row">
+                <Link href={`/viewer?doc=${document.id}`} className="doc-link">
+                  <span className="doc-thumb" aria-hidden="true">{document.storage_path === "blank" ? "SLIDE" : "PDF"}</span>
+                  <span className="list-item-body">
+                    <span className="list-item-title">{document.filename}</span>
+                    <span className="list-item-meta">
+                      {document.storage_path === "blank" ? "Blank presentation" : document.page_count ? `${document.page_count} pages` : "PDF document"} · Updated {new Date(document.updated_at).toLocaleDateString("en-GB")}
+                    </span>
+                  </span>
+                </Link>
+                <DeleteDocumentButton documentId={document.id} filename={document.filename} storagePath={document.storage_path} />
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <div className="empty-state">
+            <span className="icon-badge" aria-hidden="true"><FilePdf size={22} /></span>
+            <h2>Your library is empty</h2>
+            <p>Add a PDF to save it to your account. It will be available on every device you sign in on.</p>
+            <Link className="btn btn-primary" href="/upload"><Plus size={18} aria-hidden="true" /> Add a PDF</Link>
+          </div>
+        )}
+      </main>
+
+      <BottomNav />
+    </>
+  );
 }
