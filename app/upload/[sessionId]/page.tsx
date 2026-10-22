@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+
 import { MobileUpload } from "../../../components/upload/mobile-upload";
 
 // This route is intentionally unauthenticated (students scan a QR code).
@@ -9,10 +10,10 @@ import { MobileUpload } from "../../../components/upload/mobile-upload";
 const SESSION_UPLOAD_ENABLED = process.env.ENABLE_SESSION_UPLOAD === "true";
 
 export default async function UploadPage({ params }: { params: Promise<{ sessionId: string }> }) {
-  if (!SESSION_UPLOAD_ENABLED) {
-    // Return 404 rather than exposing an unfinished, permanently-open endpoint.
-    notFound();
-  }
-  const { sessionId } = await params;
-  return <MobileUpload sessionId={sessionId} />;
+    if (!SESSION_UPLOAD_ENABLED) {
+        // Return 404 rather than exposing an unfinished, permanently-open endpoint.
+        notFound();
+    }
+    const { sessionId } = await params;
+    return <MobileUpload sessionId={sessionId} />;
 }
