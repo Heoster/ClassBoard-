@@ -31,7 +31,7 @@ export function SignInPanel() {
           return;
         }
         if (result.data.session) {
-          const next = searchParams.get("next") ?? "/dashboard";
+          const next = searchParams.get("next") ?? "/";
           router.push(next);
           router.refresh();
         } else {
@@ -46,7 +46,7 @@ export function SignInPanel() {
           setMessage(result.error.message);
           return;
         }
-        const next = searchParams.get("next") ?? "/dashboard";
+        const next = searchParams.get("next") ?? "/";
         router.push(next);
         router.refresh();
       }

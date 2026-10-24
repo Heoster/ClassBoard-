@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { House, Files, Presentation, UserCircle, type Icon } from "@phosphor-icons/react";
 
 const items: { href: string; label: string; icon: Icon }[] = [
-  { href: "/dashboard", label: "Home", icon: House },
+  { href: "/", label: "Home", icon: House },
   { href: "/documents", label: "Library", icon: Files },
   { href: "/viewer", label: "Board", icon: Presentation },
   { href: "/settings", label: "Account", icon: UserCircle },

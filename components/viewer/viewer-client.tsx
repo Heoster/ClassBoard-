@@ -5,7 +5,7 @@ import {
   ArrowLeft, ArrowUUpLeft, ArrowUUpRight, ArrowsIn, ArrowsOut, ArrowUpRight, ChartLineUp, Circle, Cloud, Copy,
   CaretDoubleDown, CaretDown, CaretLeft, CaretRight, CaretUp, Cross, Cursor, Cylinder, Diamond, DotsThree, Eraser,
   Export, FilePdf, HandGrabbing, Heart, Hexagon, Highlighter, Image as ImageIcon, LineSegment, MagnifyingGlass, MagnifyingGlassMinus,
-  MagnifyingGlassPlus, Octagon, Parallelogram, PencilSimple, PenNib, Pentagon, Play, Plus, Presentation, Scissors, Shapes,
+  MagnifyingGlassPlus, Octagon, Palette, Parallelogram, PencilSimple, PenNib, Pentagon, Play, Plus, Presentation, Scissors, Shapes,
   Sliders, Square, Star, Stop, TextT, Trash, Triangle, X,
 } from "@phosphor-icons/react";
 import { useSearchParams } from "next/navigation";
@@ -439,6 +439,10 @@ export function ViewerClient() {
   const [renameValue, setRenameValue] = useState("");
   const [settingsTab, setSettingsTab] = useState<"canvas" | "tools" | "document" | "view">("canvas");
 
+  // ─── Mini context bar near selection (duplicate + color) ────────────────────
+  const [miniColorOpen, setMiniColorOpen] = useState(false);
+  const [miniPos, setMiniPos] = useState<{ x: number; y: number } | null>(null);
+
   // ─── Draggable dock position ────────────────────────────────────────────────
   const [dockPos, setDockPos] = useState<{ x: number; y: number } | null>(null);
   const dockDragRef = useRef<{
@@ -471,6 +475,7 @@ export function ViewerClient() {
         setActiveDropdown(null);
         setZoomMenuOpen(false);
         setShapesPanelOpen(false);
+        setMiniColorOpen(false);
       }
     };
     document.addEventListener("keydown", onKeyEscape);
@@ -482,6 +487,7 @@ export function ViewerClient() {
   useEffect(() => {
     const onClickOutside = (e: MouseEvent) => {
       const target = e.target as HTMLElement;
+      if (!target.closest(".selection-mini-bar")) setMiniColorOpen(false);
       if (!target.closest(".tool-dropdown-container") && !target.closest(".zoom-controls-wrapper")) {
         setActiveDropdown(null);
         setZoomMenuOpen(false);
@@ -533,6 +539,57 @@ export function ViewerClient() {
   const pages = pageOrder.length;
   const currentPage = pageOrder[page - 1];
   const selectedAnnotation = annotations.find(a => a.id === selectedId);
+
+  // ─── Mini toolbar position (very small icons near selection) ──────────────
+  useEffect(() => {
+    if (!selectedAnnotation || presenting) { setMiniPos(null); setMiniColorOpen(false); return; }
+    const update = () => {
+      const stageRect = stage.current?.getBoundingClientRect();
+      const pageRect = pageEl.current?.getBoundingClientRect();
+      if (!stageRect || !pageRect || pageRect.width === 0) return;
+      // Handle both simple bbox and point-based strokes: use annotation bounds
+      let ax = selectedAnnotation.x;
+      let ay = selectedAnnotation.y;
+      let aw = selectedAnnotation.width;
+      let ah = selectedAnnotation.height;
+      if (selectedAnnotation.points && selectedAnnotation.points.length) {
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        for (const p of selectedAnnotation.points) { if (p.x < minX) minX = p.x; if (p.y < minY) minY = p.y; if (p.x > maxX) maxX = p.x; if (p.y > maxY) maxY = p.y; }
+        ax = minX; ay = minY; aw = Math.max(0.02, maxX - minX); ah = Math.max(0.02, maxY - minY);
+      }
+      const toolbarW = 70; const toolbarH = 30;
+      const absCenterX = pageRect.left - stageRect.left + (ax + aw/2) * pageRect.width;
+      const absTopY = pageRect.top - stageRect.top + ay * pageRect.height;
+      let left = absCenterX - toolbarW/2;
+      let top = absTopY - toolbarH - 36; // 36px clears rotate handle (24px stem + 6px radius)
+      // flip below if too close to top edge
+      if (top < 6) top = pageRect.top - stageRect.top + (ay + ah) * pageRect.height + 8;
+      left = Math.max(6, Math.min(stageRect.width - toolbarW - 6, left));
+      top = Math.max(6, Math.min(stageRect.height - toolbarH - 6, top));
+      setMiniPos({ x: left, y: top });
+    };
+    update();
+    const onWin = () => update();
+    window.addEventListener('resize', onWin);
+    window.addEventListener('scroll', onWin, true);
+    let ro: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== 'undefined' && stage.current) {
+      ro = new ResizeObserver(onWin);
+      ro.observe(stage.current);
+      if (pageEl.current) ro.observe(pageEl.current);
+    }
+    // keep updating while dragging/transforming
+    let raf = 0;
+    const tick = () => { update(); raf = requestAnimationFrame(tick); };
+    if (transforming) raf = requestAnimationFrame(tick);
+    return () => {
+      window.removeEventListener('resize', onWin);
+      window.removeEventListener('scroll', onWin, true);
+      if (ro) ro.disconnect();
+      if (raf) cancelAnimationFrame(raf);
+    };
+  }, [selectedAnnotation, presenting, transforming, page, zoom, pan, annotations]);
+
 
   const initBlankDocument = async (title = "Untitled Slide Presentation") => {
     setPdf(null); setSource(null);
@@ -784,14 +841,31 @@ export function ViewerClient() {
       (tool as string) === "line" || (tool as string) === "arrow" ||
       (tool as string) === "graph" || (tool as string) === "text" ||
       (tool as string) === "image";
+    // Deselect when clicking empty stage in select mode
+    if (isEmptyStageTarget && (tool as string) === "select") {
+      setSelectedId(undefined);
+      // also clear any transform in progress
+      if (transformOwner.current) transformOwner.current = null;
+      if (transforming) setTransforming(null);
+      return;
+    }
     if (isEmptyStageTarget && isDrawingOnStage && !panOwner.current) {
       // Prevent pan/overlay from also handling this pointer
       if ((tool as string) === "select" || (tool as string) === "pan") return;
       setActiveDropdown(null);
       setZoomMenuOpen(false);
       setMoreOpen(false);
-      if (autoHideDock && (drawingTypes.includes(tool as AnnotationType) || (tool as string).includes("eraser"))) {
-        setDockCollapsed(true);
+      if (autoHideDock) {
+        const isCreationTool =
+          drawingTypes.includes(tool as AnnotationType) ||
+          (tool as string).includes("eraser") ||
+          SHAPE_TOOLS.includes(tool as string) ||
+          (tool as string) === "text" ||
+          (tool as string) === "image" ||
+          (tool as string) === "line" ||
+          (tool as string) === "arrow" ||
+          (tool as string) === "graph";
+        if (isCreationTool) setDockCollapsed(true);
       }
       const pagePt = pointFromStage(e);
       if (!pagePt) return;
@@ -895,7 +969,18 @@ export function ViewerClient() {
     setActiveDropdown(null);
     setZoomMenuOpen(false);
     setMoreOpen(false);
-    if (autoHideDock && (drawingTypes.includes(tool as AnnotationType) || (tool as string).includes("eraser"))) setDockCollapsed(true);
+    if (autoHideDock) {
+      const isCreationTool =
+        drawingTypes.includes(tool as AnnotationType) ||
+        (tool as string).includes("eraser") ||
+        SHAPE_TOOLS.includes(tool as string) ||
+        (tool as string) === "text" ||
+        (tool as string) === "image" ||
+        (tool as string) === "line" ||
+        (tool as string) === "arrow" ||
+        (tool as string) === "graph";
+      if (isCreationTool) setDockCollapsed(true);
+    }
     const pt = point(e);
     const owner: PointerOwner = { id: e.pointerId, type: e.pointerType };
     if (tool === "select") {
@@ -1524,6 +1609,8 @@ export function ViewerClient() {
     transformOwner.current = { id: e.pointerId, type: e.pointerType };
     setSelectedId(annotation.id);
     setPropertiesOpen(true);
+    // Selector dragging should also hide dock for more canvas space (like pen/eraser)
+    if (autoHideDock) setDockCollapsed(true);
     setTransforming({ handle, startPoint: point(e), initial: { x: annotation.x, y: annotation.y, width: annotation.width, height: annotation.height, rotation: annotation.rotation ?? 0, points: annotation.points ? [...annotation.points] : undefined } });
   };
 
@@ -1629,7 +1716,7 @@ export function ViewerClient() {
 
       {/* ─── Top app bar ─────────────────────────────────────────────────── */}
       <header className="viewer-bar">
-        <a href="/dashboard" className="btn-icon" aria-label="Back to dashboard" title="Back">
+        <a href="/" className="btn-icon" aria-label="Back to dashboard" title="Back">
           <ArrowLeft size={22} aria-hidden="true" />
         </a>
 
@@ -1864,7 +1951,21 @@ export function ViewerClient() {
                         isDrawingTool={!["select", "pan"].includes(tool)}
                         viewportScale={viewportScale}
                         onPointerDown={(e, a) => {
-                          if (tool === "select") startTransform(e, "body", a);
+                          if (tool === "select") {
+                            // Double-tap / double-click on text → edit immediately
+                            const native = e as unknown as { detail?: number };
+                            if (native.detail === 2 && a.type === "text") {
+                              e.stopPropagation();
+                              setSelectedId(a.id);
+                              setEditingId(a.id);
+                              setTextValue(a.content ?? "");
+                              setFontFamily(a.style.fontFamily || "Inter, system-ui, sans-serif");
+                              setFontSize(a.style.fontSize || 32);
+                              setTextPoints([{ x: a.x, y: a.y }, { x: a.x + a.width, y: a.y + a.height }]);
+                              return;
+                            }
+                            startTransform(e, "body", a);
+                          }
                         }}
                       />
                     ))}
@@ -2015,6 +2116,65 @@ export function ViewerClient() {
                 <button type="button" className="btn btn-secondary" onClick={() => setPresenting(false)}>
                   <Stop size={18} weight="fill" aria-hidden="true" /> Exit
                 </button>
+              </div>
+            )}
+
+            {/* ─── Mini context bar: very small icons near selection ─────────── */}
+            {selectedAnnotation && miniPos && !presenting && (
+              <div
+                className="selection-mini-bar"
+                style={{ left: miniPos.x, top: miniPos.y }}
+                onPointerDown={e => e.stopPropagation()}
+                onClick={e => e.stopPropagation()}
+                role="toolbar"
+                aria-label="Selection actions"
+              >
+                <button
+                  type="button"
+                  className="mini-btn"
+                  aria-label="Duplicate"
+                  title="Duplicate"
+                  onClick={(e) => { e.stopPropagation(); duplicateSelected(); }}
+                >
+                  <Copy size={14} weight="bold" aria-hidden="true" />
+                </button>
+                <div className="mini-divider" aria-hidden="true" />
+                <button
+                  type="button"
+                  className={`mini-btn ${miniColorOpen ? 'is-active' : ''}`}
+                  aria-label="Change color"
+                  title="Change color"
+                  aria-expanded={miniColorOpen}
+                  aria-haspopup="menu"
+                  onClick={(e) => { e.stopPropagation(); setMiniColorOpen(v => !v); }}
+                  style={{ background: strokeColor, color: strokeColor === '#ffffff' ? '#0a1120' : '#fff' }}
+                >
+                  <Palette size={14} weight="fill" aria-hidden="true" />
+                </button>
+                {miniColorOpen && (
+                  <div className="mini-palette" role="menu" aria-label="Colors">
+                    {strokeColors.map(col => (
+                      <button
+                        key={col}
+                        type="button"
+                        role="menuitemradio"
+                        aria-checked={strokeColor === col}
+                        className={`mini-swatch ${strokeColor === col ? 'is-active' : ''} ${col === '#ffffff' ? 'is-light' : ''}`}
+                        style={{ backgroundColor: col }}
+                        aria-label={`Color ${col}`}
+                        onClick={(e) => { e.stopPropagation(); setColor(col); updateSelected({ style: { color: col } }); setMiniColorOpen(false); }}
+                      />
+                    ))}
+                    <label className="mini-swatch mini-swatch-custom" title="Custom color" aria-label="Custom color">
+                      <input
+                        type="color"
+                        value={strokeColor}
+                        aria-label="Custom color"
+                        onChange={e => { setColor(e.target.value); updateSelected({ style: { color: e.target.value } }); }}
+                      />
+                    </label>
+                  </div>
+                )}
               </div>
             )}
 
@@ -2327,9 +2487,46 @@ export function ViewerClient() {
             onSubmit={e => { e.preventDefault(); submitText(); }}
           >
             <h2 id="text-dialog-title">{editingId ? "Edit text" : "Add text"}</h2>
+            {/* Live preview with current style — scales responsively like on-canvas text */}
+            {textValue.trim() && (
+              <div
+                className="card"
+                style={{
+                  padding: "0.75rem 0.875rem",
+                  background: "var(--surface-raised, #f8fafc)",
+                  border: "1px dashed var(--border, #e2e8f0)",
+                  fontFamily,
+                  fontSize: `${Math.max(14, Math.min(28, (fontSize * (viewportScale ?? 1) * 0.35)))}px`,
+                  fontWeight: 700,
+                  color,
+                  opacity,
+                  whiteSpace: "pre-wrap",
+                  wordBreak: "break-word",
+                  minHeight: "2.2rem",
+                }}
+                aria-hidden="true"
+              >
+                {textValue}
+              </div>
+            )}
             <label className="field">
-              Text
-              <input className="input" autoFocus value={textValue} onChange={e => setTextValue(e.target.value)} placeholder="Type your text" />
+              Text (Enter for new line)
+              <textarea
+                className="input"
+                autoFocus
+                rows={3}
+                value={textValue}
+                onChange={e => setTextValue(e.target.value)}
+                placeholder="Type your text — supports multiple lines"
+                style={{ resize: "vertical", minHeight: "72px", fontFamily }}
+                onKeyDown={e => {
+                  if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+                    e.preventDefault();
+                    if (textValue.trim()) submitText();
+                  }
+                }}
+              />
+              <span className="helper" style={{ fontSize: "0.75rem" }}>Press Ctrl+Enter to save. Drag on canvas to set box size; tap for auto-size.</span>
             </label>
             <label className="field">
               Font
@@ -2347,7 +2544,7 @@ export function ViewerClient() {
             </div>
             <div className="dialog-actions">
               <button type="button" className="btn btn-secondary" onClick={() => setTextPoints(null)}>Cancel</button>
-              <button className="btn btn-primary" type="submit" disabled={!textValue.trim()}>Add text</button>
+              <button className="btn btn-primary" type="submit" disabled={!textValue.trim()}>{editingId ? "Save" : "Add text"}</button>
             </div>
           </form>
         </div>

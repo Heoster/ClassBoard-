@@ -19,19 +19,32 @@ export async function middleware(request: NextRequest) {
   });
 
   const { data: { user } } = await supabase.auth.getUser();
+  const pathname = request.nextUrl.pathname;
+
+  // Public routes: no login required (download APK, auth, assets handled by matcher)
   const isPublic =
-    request.nextUrl.pathname === "/" ||
-    request.nextUrl.pathname.startsWith("/sign-in") ||
-    request.nextUrl.pathname.startsWith("/upload") ||   // student QR upload — no auth required
-    request.nextUrl.pathname.startsWith("/_next") ||
-    request.nextUrl.pathname === "/favicon.ico";
+    pathname.startsWith("/sign-in") ||
+    pathname.startsWith("/download") ||
+    pathname === "/CODEEX-STUDIO.apk" ||
+    pathname.startsWith("/.well-known") ||
+    pathname === "/manifest.json" ||
+    pathname === "/sw.js" ||
+    pathname === "/offline.html" ||
+    pathname.startsWith("/upload") ||   // student QR upload — no auth required
+    pathname.startsWith("/_next") ||
+    pathname === "/favicon.ico" ||
+    pathname === "/favicon.svg" ||
+    pathname === "/apple-touch-icon.svg" ||
+    pathname.startsWith("/icon-");
+
   if (!user && !isPublic) {
     const loginUrl = request.nextUrl.clone();
     loginUrl.pathname = "/sign-in";
-    loginUrl.searchParams.set("next", request.nextUrl.pathname);
+    loginUrl.searchParams.set("next", pathname);
     return NextResponse.redirect(loginUrl);
   }
-  if (user && request.nextUrl.pathname === "/sign-in") return NextResponse.redirect(new URL("/dashboard", request.url));
+  // Logged-in users hitting sign-in should go to dashboard (now at "/")
+  if (user && pathname === "/sign-in") return NextResponse.redirect(new URL("/", request.url));
   return response;
 }
 
