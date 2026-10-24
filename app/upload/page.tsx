@@ -6,7 +6,7 @@ export default function UploadPage() {
   return (
     <main className="centered-shell" style={{ maxWidth: "560px" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "0.5rem" }}>
-        <Link href="/dashboard" className="btn btn-ghost" style={{ paddingLeft: "0.5rem" }}>
+        <Link href="/" className="btn btn-ghost" style={{ paddingLeft: "0.5rem" }}>
           <CaretLeft size={18} aria-hidden="true" /> Home
         </Link>
         <Link href="/documents" className="btn btn-ghost">
